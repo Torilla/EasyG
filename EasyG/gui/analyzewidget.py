@@ -29,6 +29,10 @@ class FilterOptionsWidget(QGroupBox):
         layout = QFormLayout()
         self.setLayout(layout)
 
+        self.samplingRate = QLineEdit()
+        self.samplingRate.setValidator(QDoubleValidator())
+        layout.addRow("Sampling rate:", self.samplingRate)
+
         self.order = QSpinBox()
         self.order.setMinimum(1)
         self.order.setValue(2)
@@ -36,7 +40,8 @@ class FilterOptionsWidget(QGroupBox):
         layout.addRow("Order:", self.order)
 
     def getFilterOptions(self):
-        return {"order": self.order.value()}
+        return {"sample_rate": float(self.samplingRate.text()),
+                "order": self.order.value()}
 
 
 class SinglePassFilterWidget(FilterOptionsWidget):
@@ -111,7 +116,11 @@ class MainFilterWidget(QGroupBox):
         layout.addWidget(self.applyButton, alignment=Qt.AlignRight)
 
     def getFilterOptions(self):
-        return self.stackedFilterLayout.currentWidget().getFilterOptions()
+        filterType = self.availableFilters.currentText().split(" ")[0].lower()
+        opts = self.stackedFilterLayout.currentWidget().getFilterOptions()
+        opts["filtertype"] = filterType
+
+        return opts
 
 
 class HeartPyProcessWidget(QGroupBox):
@@ -144,10 +153,16 @@ class HeartPyProcessWidget(QGroupBox):
         self.frequencyDomain = QCheckBox()
         self.squarePowerSpecturm = QCheckBox()
 
+    def getProcessOptions(self):
+        return {"windowsize": float(self.windowSize.text()),
+                "sample_rate": float(self.samplingRate.text()),
+                "freq_method": self.frequencyMethod.currentText(),
+                "welch_wsize": float(self.welchWindowSize.text())}
+
 
 class MainProcessWidget(QGroupBox):
-    availableProcessors = {"Process signal": HeartPyProcessWidget,
-                           "Find peaks": HeartPyProcessWidget}
+    availableProcessors = {"HeartPy.process": HeartPyProcessWidget,
+                           "HeartPy.find_peaks": HeartPyProcessWidget}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -176,6 +191,12 @@ class MainProcessWidget(QGroupBox):
                                        QSizePolicy.Minimum)
         layout.addWidget(self.applyButton, alignment=Qt.AlignRight)
 
+    def getProcessOptions(self):
+        data = self.stackedProcessorLayout.currentWidget().getProcessOptions()
+        data["processor"] = self.availableProcessors.currentText()
+
+        return data
+
 
 class MainAnalyzePlotWidget(QGroupBox):
     def __init__(self, *args, **kwargs):
@@ -191,3 +212,15 @@ class MainAnalyzePlotWidget(QGroupBox):
 
         self.filterWidget = MainFilterWidget()
         layout.addWidget(self.filterWidget, 1, 1)
+
+    def getFilterOptions(self):
+        return self.filterWidget.getFilterOptions()
+
+    def getProcessOptions(self):
+        return self.processWidget.getProcessOptions()
+
+    def processButton(self):
+        return self.processWidget.applyButton
+
+    def filterButton(self):
+        return self.filterWidget.applyButton

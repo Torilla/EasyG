@@ -15,3 +15,13 @@ def process(*args, **kwargs):
 
     return data, measures
 
+
+PROCESSORDICT = {"HeartPy.process": process}
+
+
+def getProcessor(name):
+    return PROCESSORDICT[name]
+
+
+def filterSignal(*args, **kwargs):
+    return hp.filter_signal(*args, **kwargs)

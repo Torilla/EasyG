@@ -1,12 +1,16 @@
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QGridLayout, QFormLayout, QHBoxLayout
-from PyQt5.QtWidgets import QSplitter, QGroupBox
-from PyQt5.QtWidgets import QComboBox
+from PyQt5.QtWidgets import QSplitter, QGroupBox, QLineEdit
+from PyQt5.QtWidgets import QComboBox, QFrame
 from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem
 
 import pyqtgraph as pg
 
+from EasyG.config import setPyqtgraphConfig
 from EasyG.gui.analyzewidget import MainAnalyzePlotWidget
+from EasyG import ecganalysis
+
+_CONFIG = setPyqtgraphConfig()
 
 
 class PlotDataItem(pg.PlotDataItem):
@@ -24,6 +28,11 @@ class PlotDataItem(pg.PlotDataItem):
         return self._ID
 
 
+class PlotWidget(pg.PlotWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+
 class DataMangerWidget(QGroupBox):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -39,8 +48,11 @@ class DataMangerWidget(QGroupBox):
         self.dataTarget = QComboBox()
         self.dataTarget.addItem("New plot")
 
+        self.targetName = QLineEdit()
+
         dataSelectLayout.addRow("Select data source:", self.dataSelect)
         dataSelectLayout.addRow("Display results on:", self.dataTarget)
+        dataSelectLayout.addRow("Name of new plot:", self.targetName)
 
         self.availablePlotsList = QTableWidget()
         self.availablePlotsList.setColumnCount(1)
@@ -114,6 +126,16 @@ class DataMangerWidget(QGroupBox):
         # for names and does not cound in the index
         self.availablePlotsList.item(itemIdx, plotIdx + 1).setCheckState(state)
 
+    def getDataSelect(self):
+        itemIdx = self.dataSelect.currentIndex()
+
+        # first index means new plot, so set it to None
+        # otherwise shift the index by one to ignore new plot options
+        plotIdx = self.dataTarget.currentIndex()
+        plotIdx = plotIdx - 1 if plotIdx > 0 else None
+
+        return itemIdx, plotIdx, self.targetName.text() or None
+
 
 class MultiPlotWidget(QSplitter):
     def __init__(self, *args, orientation=Qt.Vertical, **kwargs):
@@ -131,11 +153,18 @@ class MultiPlotWidget(QSplitter):
 
     def addPlot(self):
         plotterIdx = len(self.plotWidgets)
-        plotWidget = pg.PlotWidget()
+        plotWidget = PlotWidget()
         plotWidget.addLegend()
         self.plotWidgets.append(plotWidget)
 
-        self.addWidget(plotWidget)
+        framedPlotWidtet = QFrame()
+        framedPlotWidtet.setFrameStyle(QFrame.Box | QFrame.Raised)
+        framedPlotWidtet.setLineWidth(1)
+        framedPlotWidtet.setMidLineWidth(1)
+        framedPlotWidtet.setLayout(QGridLayout())
+        framedPlotWidtet.layout().addWidget(plotWidget, 0, 0)
+
+        self.addWidget(framedPlotWidtet)
 
         return plotterIdx
 
@@ -157,12 +186,16 @@ class MultiPlotWidget(QSplitter):
     def newDataItem(self, plotterIdx=None, **kwargs):
         itemIdx = len(self.dataItems)
 
+        kwargs["pen"] = kwargs.get("pen", pg.intColor(itemIdx))
         self.dataItems.append(PlotDataItem(**kwargs))
 
         if plotterIdx is not None:
             self.addItemToPlot(plotterIdx=plotterIdx, itemIdx=itemIdx)
 
         return itemIdx
+
+    def getDataFromItemIndex(self, itemIdx):
+        return self.dataItems[itemIdx].getData()
 
 
 class MainPlotWidget(QGroupBox):
@@ -186,6 +219,9 @@ class MainPlotWidget(QGroupBox):
         layout.setRowStretch(0, 2)
         layout.setRowStretch(1, 1)
 
+        self.analyzeWidget.filterButton().clicked.connect(self.onApplyFilter)
+        self.analyzeWidget.processButton().clicked.connect(self.onProcess)
+
     def addPlot(self, plotterName=None):
         plotIdx = self.plotWidget.addPlot()
 
@@ -196,11 +232,14 @@ class MainPlotWidget(QGroupBox):
 
         return plotIdx
 
-    def newDataItem(self, plotterIdx=None, **kwargs):
-        itemIdx = self.plotWidget.newDataItem(plotterIdx=plotterIdx, **kwargs)
+    def newDataItem(self, plotterIdx=None, name=None, **kwargs):
+        if name is None:
+            name = f"plot {self.plotWidget.itemCount()}"
 
-        self.dataManager.registerNewDataItem(
-            rowName=kwargs.get("name", f"plot {itemIdx}"))
+        itemIdx = self.plotWidget.newDataItem(plotterIdx=plotterIdx, name=name,
+                                              **kwargs)
+
+        self.dataManager.registerNewDataItem(rowName=name)
 
         if plotterIdx is not None:
             self.dataManager.setPlotChecked(plotIdx=plotterIdx,
@@ -223,3 +262,52 @@ class MainPlotWidget(QGroupBox):
 
         if not containsPlot and isChecked:
             self.plotWidget.addItemToPlot(itemIdx=itemIdx, plotterIdx=plotIdx)
+
+    def onApplyFilter(self):
+        filterOpts = self.analyzeWidget.getFilterOptions()
+        itemIdx, plotIdx, name = self.dataManager.getDataSelect()
+
+        name = name or filterOpts["filtertype"]
+
+        if plotIdx is None:
+            plotIdx = self.addPlot()
+
+        x, y = self.plotWidget.getDataFromItemIndex(itemIdx)
+        y = ecganalysis.filterSignal(y, **filterOpts)
+
+        self.newDataItem(x=x, y=y, plotterIdx=plotIdx, name=name)
+
+    def onProcess(self):
+        processOpts = self.analyzeWidget.getProcessOptions()
+        _processor = processOpts.pop("processor")
+        processor = ecganalysis.getProcessor(_processor)
+
+        itemIdx, plotIdx, name = self.dataManager.getDataSelect()
+
+        name = name or _processor
+
+        if plotIdx is None:
+            plotIdx = self.addPlot()
+
+        x, y = self.plotWidget.getDataFromItemIndex(itemIdx)
+        data, measures = processor(y, **processOpts)
+
+        x_accepted, x_rejected = [], []
+        y_accepted, y_rejected = [], []
+
+        for idx, xIdx in enumerate(data["peaklist"]):
+            if data["binary_peaklist"][idx]:
+                x_accepted.append(x[xIdx])
+                y_accepted.append(y[xIdx])
+
+            else:
+                x_rejected.append(x[xIdx])
+                y_rejected.append(y[xIdx])
+
+        self.newDataItem(x=x_accepted, y=y_accepted, plotterIdx=plotIdx,
+                         name="accepted peaks", pen=None, symbolBrush="g",
+                         symbol="o")
+
+        self.newDataItem(x=x_rejected, y=y_rejected, plotterIdx=plotIdx,
+                         name="rejected peaks", pen=None, symbolBrush="r",
+                         symbol="o")
