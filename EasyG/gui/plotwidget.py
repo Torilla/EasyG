@@ -1,13 +1,12 @@
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QGridLayout, QFormLayout, QHBoxLayout
-from PyQt5.QtWidgets import QSplitter, QGroupBox, QLineEdit
-from PyQt5.QtWidgets import QComboBox, QFrame
-from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem
+from PyQt5.QtCore import Qt, pyqtSignal, QSize
+from PyQt5.QtWidgets import QGridLayout, QSizePolicy
+from PyQt5.QtWidgets import QSplitter, QGroupBox, QFrame
 
 import pyqtgraph as pg
 
 from EasyG.config import setPyqtgraphConfig
 from EasyG.gui.analyzewidget import MainAnalyzePlotWidget
+from EasyG.gui.analyzewidget import ProcessResultTableWidget
 from EasyG import ecganalysis
 
 _CONFIG = setPyqtgraphConfig()
@@ -29,115 +28,128 @@ class PlotDataItem(pg.PlotDataItem):
 
 
 class PlotWidget(pg.PlotWidget):
+    # (lower, upper) x-bound of the roi in coordinates of the axis
+    ROICoordinatesChanged = pyqtSignal(float, float)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        # Region of Interest upon double click
+        self._ROI = None
 
-class DataMangerWidget(QGroupBox):
+        # drag conenction while ROI is being drawn
+        self._conROI = None
+
+    def getROI(self):
+        return self._ROI
+
+    def setROI(self, roi):
+        if roi is None:
+            # unset Roi if it exists
+            if (_roi := self.getROI()) is not None:
+                self.removeItem(_roi)
+                _roi.deleteLater()
+
+        else:
+            # set Roi
+            self.addItem(roi)
+
+        self._ROI = roi
+
+    def setRectROI(self):
+        roi = pg.RectROI(pos=self._posROI, size=(0, 0), pen="g",
+                         invertible=True, sideScalers=True)
+        self.setROI(roi)
+
+    def RoiIsConnected(self):
+        return self._conROI is not None
+
+    def connectRoiDrag(self):
+        self._conROI = self.scene().sigMouseMoved.connect(self._dragRectRoi)
+
+    def disconnectRoiDrag(self):
+        self.scene().sigMouseMoved.disconnect(self._conROI)
+        self._conROI = None
+
+    def _dragRectRoi(self, pos):
+        pos = self.getViewBox().mapSceneToView(pos)
+        size = pos - self._posROI
+        self.getROI().setSize(size)
+        self.ROICoordinatesChanged.emit(self._posROI.x(), pos.x())
+
+    def mouseDoubleClickEvent(self, event):
+        event.accept()
+
+        if self.getROI() is not None:
+            self.setROI(None)
+
+        self._posROI = self.getViewBox().mapSceneToView(event.pos())
+        self.setRectROI()
+
+        # connect dragging of the ROI
+        self.connectRoiDrag()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.RightButton and self.getROI() is not None:
+            event.accept()
+            self.setROI(None)
+
+        else:
+            super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if not self.RoiIsConnected():
+            super().mouseReleaseEvent(event)
+
+        else:
+            event.accept()
+            self.disconnectRoiDrag()
+
+
+class FramedPlotWidget(QFrame):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        layout = QHBoxLayout()
+        self.setFrameStyle(QFrame.Box | QFrame.Raised)
+        self.setLineWidth(1)
+        self.setMidLineWidth(1)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+
+        layout = QGridLayout()
         self.setLayout(layout)
 
-        dataSelectLayout = QFormLayout()
-        layout.addLayout(dataSelectLayout)
+        self.plotWidget = PlotWidget()
+        layout.addWidget(self.plotWidget, 0, 0)
 
-        self.dataSelect = QComboBox()
-        self.dataSelect.setMinimumWidth(150)
-        self.dataTarget = QComboBox()
-        self.dataTarget.addItem("New plot")
+        self.resultTableWidget = ProcessResultTableWidget()
+        layout.addWidget(self.resultTableWidget, 0, 0,
+                         Qt.AlignTop | Qt.AlignRight)
 
-        self.targetName = QLineEdit()
+    def __getattribute__(self, attr):
+        # delegate attribute lookup to the plot widget
 
-        dataSelectLayout.addRow("Select data source:", self.dataSelect)
-        dataSelectLayout.addRow("Display results on:", self.dataTarget)
-        dataSelectLayout.addRow("Name of new plot:", self.targetName)
+        try:
+            attr = super().__getattribute__(attr)
 
-        self.availablePlotsList = QTableWidget()
-        self.availablePlotsList.setColumnCount(1)
-        self.availablePlotsList.setShowGrid(False)
-        self.availablePlotsList.verticalHeader().hide()
-        layout.addWidget(self.availablePlotsList)
-        self._horizontalHeaders = ["Available plots"]
+        except AttributeError as err:
+            attr = getattr(super().__getattribute__("plotWidget"), attr, None)
 
-    @staticmethod
-    def _newCheckBox():
-        checkBox = QTableWidgetItem()
-        checkBox.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-        checkBox.setCheckState(Qt.Unchecked)
+            if attr is None:
+                raise err from None
 
-        return checkBox
+        return attr
 
-    def registerNewDataItem(self, rowName: str):
-        """
-        Adds a new row to the availablePlotsList and names it rowName.
-        Fills the rest of the row's cells with unchecked checkboxes.
+    def sizeHint(self):
+        return QSize(640, 480)
 
-        Also adds the name to the dataSelect lsit
-        """
-        item = QTableWidgetItem(rowName)
-        item.setFlags(Qt.ItemIsEnabled)
-
-        # increase the number of rows by one
-        rowCount = self.availablePlotsList.rowCount()
-        self.availablePlotsList.setRowCount(rowCount + 1)
-
-        # add the name to the first cell of the new row
-        self.availablePlotsList.setItem(rowCount, 0, item)
-
-        # add checkboxes to the remaining cells in the row
-        for columnIdx in range(1, self.availablePlotsList.columnCount() + 1):
-            self.availablePlotsList.setItem(rowCount, columnIdx,
-                                            self._newCheckBox())
-
-        # add name to dataSelect
-        self.dataSelect.addItem(rowName)
-
-        self.availablePlotsList.resizeColumnsToContents()
-
-    def addNewAvailablePlotsColumn(self, columnName: str):
-        """
-        adds a new column to the availablePlotsList and puts checkboxes
-        into the cells. Names the new column columnName.
-
-        #Also adds the name to the dataTarget list.
-        """
-        columnCount = self.availablePlotsList.columnCount()
-        self.availablePlotsList.setColumnCount(columnCount + 1)
-
-        for rowIdx in range(self.availablePlotsList.rowCount() + 1):
-            self.availablePlotsList.setItem(rowIdx, columnCount,
-                                            self._newCheckBox())
-
-        self._horizontalHeaders.append(columnName)
-        self.availablePlotsList.setHorizontalHeaderLabels(
-            self._horizontalHeaders)
-
-        # add name to dataTarget list
-        self.dataTarget.addItem(columnName)
-
-        self.availablePlotsList.resizeRowsToContents()
-
-    def setPlotChecked(self, plotIdx, itemIdx, b=True):
-        state = Qt.Checked if b else Qt.Unchecked
-
-        # plotIdx needs to be shifted by one because the first column is
-        # for names and does not cound in the index
-        self.availablePlotsList.item(itemIdx, plotIdx + 1).setCheckState(state)
-
-    def getDataSelect(self):
-        itemIdx = self.dataSelect.currentIndex()
-
-        # first index means new plot, so set it to None
-        # otherwise shift the index by one to ignore new plot options
-        plotIdx = self.dataTarget.currentIndex()
-        plotIdx = plotIdx - 1 if plotIdx > 0 else None
-
-        return itemIdx, plotIdx, self.targetName.text() or None
+    def setResultsTable(self, results):
+        self.resultTableWidget.setResults(results)
 
 
 class MultiPlotWidget(QSplitter):
+    # plotterIdx, roi x-bounds
+    ROICoordinatesChanged = pyqtSignal(int, tuple)
+
     def __init__(self, *args, orientation=Qt.Vertical, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -152,19 +164,18 @@ class MultiPlotWidget(QSplitter):
         return len(self.dataItems)
 
     def addPlot(self):
+        def _forwardRoiCoordinates(*coords):
+            idx = self.plotWidgets.index(plotWidget)
+            self.ROICoordinatesChanged.emit(idx, coords)
+
         plotterIdx = len(self.plotWidgets)
-        plotWidget = PlotWidget()
+        plotWidget = FramedPlotWidget()
         plotWidget.addLegend()
+
+        plotWidget.ROICoordinatesChanged.connect(_forwardRoiCoordinates)
+
         self.plotWidgets.append(plotWidget)
-
-        framedPlotWidtet = QFrame()
-        framedPlotWidtet.setFrameStyle(QFrame.Box | QFrame.Raised)
-        framedPlotWidtet.setLineWidth(1)
-        framedPlotWidtet.setMidLineWidth(1)
-        framedPlotWidtet.setLayout(QGridLayout())
-        framedPlotWidtet.layout().addWidget(plotWidget, 0, 0)
-
-        self.addWidget(framedPlotWidtet)
+        self.addWidget(plotWidget)
 
         return plotterIdx
 
@@ -194,8 +205,25 @@ class MultiPlotWidget(QSplitter):
 
         return itemIdx
 
+    def setItemData(self, itemIdx, *args, **kwargs):
+        if args:
+            raise NotImplementedError("Positional update not possible")
+
+        self.dataItems[itemIdx]._kwargs.update(kwargs)
+
+        for idx in range(self.plotCount()):
+            if self.plotContainsItem(plotterIdx=idx, itemIdx=itemIdx):
+                self.removeItemFromPlot(plotterIdx=idx, itemIdx=itemIdx)
+                self.addItemToPlot(plotterIdx=idx, itemIdx=itemIdx)
+
     def getDataFromItemIndex(self, itemIdx):
         return self.dataItems[itemIdx].getData()
+
+    def getNameFromItemIndex(self, itemIdx):
+        return self.dataItems[itemIdx].name()
+
+    def setResultsTable(self, plotterIdx, results):
+        self.plotWidgets[plotterIdx].setResultsTable(results)
 
 
 class MainPlotWidget(QGroupBox):
@@ -206,15 +234,12 @@ class MainPlotWidget(QGroupBox):
         self.setLayout(layout)
 
         self.plotWidget = MultiPlotWidget()
+        self.plotWidget.ROICoordinatesChanged.connect(
+            self.onRoiCoordinatesChanged)
         layout.addWidget(self.plotWidget, 0, 0)
 
-        self.dataManager = DataMangerWidget()
-        self.dataManager.availablePlotsList.itemClicked.connect(
-            self._monitorDataManager)
-        layout.addWidget(self.dataManager, 1, 0)
-
         self.analyzeWidget = MainAnalyzePlotWidget()
-        layout.addWidget(self.analyzeWidget, 2, 0)
+        layout.addWidget(self.analyzeWidget, 1, 0)
 
         layout.setRowStretch(0, 2)
         layout.setRowStretch(1, 1)
@@ -223,56 +248,42 @@ class MainPlotWidget(QGroupBox):
         self.analyzeWidget.processButton().clicked.connect(self.onProcess)
 
     def addPlot(self, plotterName=None):
-        plotIdx = self.plotWidget.addPlot()
-
         if plotterName is None:
-            plotterName = "Main plot" if not plotIdx else f"Plot {plotIdx}"
+            plotterName = f"Plot {self.plotWidget.plotCount()}"
 
-        self.dataManager.addNewAvailablePlotsColumn(columnName=plotterName)
+        self.analyzeWidget.addDataTarget(name=plotterName)
 
-        return plotIdx
+        return self.plotWidget.addPlot()
 
     def newDataItem(self, plotterIdx=None, name=None, **kwargs):
         if name is None:
             name = f"plot {self.plotWidget.itemCount()}"
 
-        itemIdx = self.plotWidget.newDataItem(plotterIdx=plotterIdx, name=name,
-                                              **kwargs)
+        idx = self.plotWidget.newDataItem(plotterIdx=plotterIdx, name=name,
+                                          **kwargs)
 
-        self.dataManager.registerNewDataItem(rowName=name)
+        x, _ = self.plotWidget.getDataFromItemIndex(idx)
+        assert x is not None, ("Empty plot item can not be created! "
+                               f"{name}, {kwargs}")
+        self.analyzeWidget.addDataSource(name=name, lowerBound=str(x[0]),
+                                         upperBound=str(x[-1]))
 
-        if plotterIdx is not None:
-            self.dataManager.setPlotChecked(plotIdx=plotterIdx,
-                                            itemIdx=itemIdx)
+        return idx
 
-    def _monitorDataManager(self, dataItem):
-        itemIdx = dataItem.row()
-
-        # shift one because of the name column that doesnt count
-        plotIdx = dataItem.column() - 1
-
-        containsPlot = self.plotWidget.plotContainsItem(plotterIdx=plotIdx,
-                                                        itemIdx=itemIdx)
-
-        isChecked = dataItem.checkState() == Qt.Checked
-
-        if containsPlot and not isChecked:
-            self.plotWidget.removeItemFromPlot(itemIdx=itemIdx,
-                                               plotterIdx=plotIdx)
-
-        if not containsPlot and isChecked:
-            self.plotWidget.addItemToPlot(itemIdx=itemIdx, plotterIdx=plotIdx)
+    def setItemData(self, *args, **kwargs):
+        self.plotWidget.setItemData(*args, **kwargs)
 
     def onApplyFilter(self):
         filterOpts = self.analyzeWidget.getFilterOptions()
-        itemIdx, plotIdx, name = self.dataManager.getDataSelect()
+        itemIdx, plotIdx, bounds, plotName = self.analyzeWidget.getDataSelect()
 
-        name = name or filterOpts["filtertype"]
+        name = filterOpts["filtertype"]
 
         if plotIdx is None:
-            plotIdx = self.addPlot()
+            plotIdx = self.addPlot(plotterName=plotName)
 
         x, y = self.plotWidget.getDataFromItemIndex(itemIdx)
+        x, y = x[bounds], y[bounds]
         y = ecganalysis.filterSignal(y, **filterOpts)
 
         self.newDataItem(x=x, y=y, plotterIdx=plotIdx, name=name)
@@ -282,32 +293,32 @@ class MainPlotWidget(QGroupBox):
         _processor = processOpts.pop("processor")
         processor = ecganalysis.getProcessor(_processor)
 
-        itemIdx, plotIdx, name = self.dataManager.getDataSelect()
+        itemIdx, plotIdx, bounds, plotName = self.analyzeWidget.getDataSelect()
 
-        name = name or _processor
+        name = _processor
 
         if plotIdx is None:
-            plotIdx = self.addPlot()
+            plotIdx = self.addPlot(plotterName=plotName)
+            self.plotWidget.addItemToPlot(plotterIdx=plotIdx, itemIdx=itemIdx)
 
         x, y = self.plotWidget.getDataFromItemIndex(itemIdx)
-        data, measures = processor(y, **processOpts)
+        x, y = x[bounds], y[bounds]
 
-        x_accepted, x_rejected = [], []
-        y_accepted, y_rejected = [], []
+        results, data = processor(x=x, y=y, processOpts=processOpts)
 
-        for idx, xIdx in enumerate(data["peaklist"]):
-            if data["binary_peaklist"][idx]:
-                x_accepted.append(x[xIdx])
-                y_accepted.append(y[xIdx])
+        _x, _y = data["accepted_peaks"]
+        if _x and _y:
+            self.newDataItem(x=_x, y=_y, plotterIdx=plotIdx,
+                             name=f"{name} (accepted peaks)", pen=None,
+                             symbolBrush="g", symbol="o")
 
-            else:
-                x_rejected.append(x[xIdx])
-                y_rejected.append(y[xIdx])
+        _x, _y = data["rejected_peaks"]
+        if _x and _y:
+            self.newDataItem(x=_x, y=_y, plotterIdx=plotIdx,
+                             name=f"{name} (rejected peaks)", pen=None,
+                             symbolBrush="r", symbol="o")
 
-        self.newDataItem(x=x_accepted, y=y_accepted, plotterIdx=plotIdx,
-                         name="accepted peaks", pen=None, symbolBrush="g",
-                         symbol="o")
+        self.plotWidget.setResultsTable(plotterIdx=plotIdx, results=results)
 
-        self.newDataItem(x=x_rejected, y=y_rejected, plotterIdx=plotIdx,
-                         name="rejected peaks", pen=None, symbolBrush="r",
-                         symbol="o")
+    def onRoiCoordinatesChanged(self, plotterIdx, bounds):
+        self.analyzeWidget.updateDataBounds(plotterIdx, *bounds)

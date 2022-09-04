@@ -1,4 +1,5 @@
-from PyQt5.QtWidgets import QMainWindow, QTabWidget, QGridLayout
+from PyQt5.QtCore import QSize
+from PyQt5.QtWidgets import QMainWindow, QTabWidget
 from PyQt5.QtWidgets import QAction
 
 from EasyG.gui.plotwidget import MainPlotWidget
@@ -22,8 +23,10 @@ class CentralWidget(QTabWidget):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, size=QSize(640, 480), *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        self.resize(size)
 
         centralWidget = CentralWidget()
         self.setCentralWidget(centralWidget)
@@ -75,6 +78,6 @@ class MainWindow(QMainWindow):
         x, y = exampleecg.openExample()
 
         plotWidget = self.newMainPlotTab(tabName="SciPy Example")
-        plotIdx = plotWidget.addPlot()
+        plotIdx = plotWidget.addPlot(plotterName="Main plot")
         plotWidget.newDataItem(x=x, y=y, plotterIdx=plotIdx,
                                name="SciPy Example")

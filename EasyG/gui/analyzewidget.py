@@ -1,9 +1,12 @@
+from math import ceil
+
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QFormLayout, QVBoxLayout, QStackedLayout
-from PyQt5.QtWidgets import QGridLayout
-from PyQt5.QtWidgets import QSizePolicy
-from PyQt5.QtWidgets import QLineEdit, QPushButton, QCheckBox
+from PyQt5.QtWidgets import QHBoxLayout, QGridLayout
+from PyQt5.QtWidgets import QWidget, QLineEdit, QPushButton, QCheckBox
 from PyQt5.QtWidgets import QGroupBox, QSpinBox, QComboBox
+from PyQt5.QtWidgets import QTableWidgetItem, QTableWidget
+from PyQt5.QtWidgets import QSizePolicy
 from PyQt5.QtGui import QDoubleValidator
 
 _GROUPBOXSTYLESHEET = """
@@ -18,6 +21,8 @@ _GROUPBOXSTYLESHEET = """
         padding: 0 0 0 2ex;
     }}
 """
+
+NEWPLOT = "New Plot"
 
 
 class FilterOptionsWidget(QGroupBox):
@@ -160,27 +165,74 @@ class HeartPyProcessWidget(QGroupBox):
                 "welch_wsize": float(self.welchWindowSize.text())}
 
 
-class MainProcessWidget(QGroupBox):
+class ProcessResultTableWidget(QTableWidget):
+    MAXLENCOLUMN = 7
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.verticalHeader().hide()
+        self.setShowGrid(False)
+        self.setSize()
+
+    def setResults(self, results):
+        nRows = len(results)
+        if nRows > self.MAXLENCOLUMN:
+            nRows = self.MAXLENCOLUMN
+
+        self.setRowCount(nRows)
+        nCols = ceil(len(results) / self.MAXLENCOLUMN)
+
+        # include property column for each result column
+        self.setColumnCount(nCols * 2)
+
+        self.setHorizontalHeaderLabels(["Property", "Value"] * nCols)
+
+        nColumn = -1
+
+        for rowIdx, (name, value) in enumerate(results.items()):
+            if not rowIdx % self.MAXLENCOLUMN:
+                nColumn += 2
+
+            if rowIdx >= self.MAXLENCOLUMN:
+                rowIdx -= (nColumn // 2) * self.MAXLENCOLUMN
+
+            name = QTableWidgetItem(name)
+            name.setTextAlignment(Qt.AlignVCenter | Qt.AlignRight)
+            self.setItem(rowIdx, nColumn - 1, name)
+
+            value = QTableWidgetItem(value)
+            value.setTextAlignment(Qt.AlignCenter)
+            self.setItem(rowIdx, nColumn, value)
+
+        self.setSize()
+
+    def setSize(self):
+        self.setFixedSize(self.horizontalHeader().length()
+                          + self.verticalHeader().width(),
+                          self.verticalHeader().length()
+                          + self.horizontalHeader().height())
+
+
+class ProcessOptionsWidget(QWidget):
     availableProcessors = {"HeartPy.process": HeartPyProcessWidget,
                            "HeartPy.find_peaks": HeartPyProcessWidget}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.setObjectName(type(self).__name__)
-        self.setStyleSheet(_GROUPBOXSTYLESHEET.format(self.objectName()))
-
-        self.setTitle("Extract data from signal")
-
         layout = QVBoxLayout()
         self.setLayout(layout)
 
         self.availableProcessors = QComboBox()
         self.availableProcessors.addItems(
-            MainProcessWidget.availableProcessors)
+            ProcessOptionsWidget.availableProcessors)
         layout.addWidget(self.availableProcessors)
 
         self.stackedProcessorLayout = QStackedLayout()
-        for proc in MainProcessWidget.availableProcessors.values():
+        for proc in ProcessOptionsWidget.availableProcessors.values():
             self.stackedProcessorLayout.addWidget(proc())
         layout.addLayout(self.stackedProcessorLayout)
         self.availableProcessors.currentIndexChanged.connect(
@@ -198,20 +250,170 @@ class MainProcessWidget(QGroupBox):
         return data
 
 
+class MainProcessWidget(QGroupBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setObjectName(type(self).__name__)
+        self.setStyleSheet(_GROUPBOXSTYLESHEET.format(self.objectName()))
+
+        self.setTitle("Extract data from signal")
+
+        layout = QHBoxLayout()
+        self.setLayout(layout)
+
+        self.processOptions = ProcessOptionsWidget()
+        layout.addWidget(self.processOptions)
+
+    def getProcessOptions(self):
+        return self.processOptions.getProcessOptions()
+
+    def processButton(self):
+        return self.processOptions.applyButton
+
+
+class DataMangerWidget(QGroupBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setObjectName(type(self).__name__)
+        self.setStyleSheet(_GROUPBOXSTYLESHEET.format(self.objectName()))
+
+        self.setTitle("Select source and target")
+
+        layout = QFormLayout()
+        self.setLayout(layout)
+
+        # First row what data to use
+        self.dataSource = QComboBox()
+        self.dataSource.currentIndexChanged.connect(self._setDataBounds)
+        layout.addRow("Operate on data:", self.dataSource)
+
+        # Second row which part of the data to use
+        dataBoundsLayout = QHBoxLayout()
+        self.lowerBoundEdit = QLineEdit()
+        self.lowerBoundEdit.textChanged.connect(self._rememberUserDataBounds)
+        dataBoundsLayout.addWidget(self.lowerBoundEdit)
+        self.upperBoundEdit = QLineEdit()
+        self.upperBoundEdit.textChanged.connect(self._rememberUserDataBounds)
+        dataBoundsLayout.addWidget(self.upperBoundEdit)
+        self.resetBoundsButton = QPushButton("reset")
+        self.resetBoundsButton.clicked.connect(self.resetDataBounds)
+        dataBoundsLayout.addWidget(self.resetBoundsButton)
+        layout.addRow("Data range:", dataBoundsLayout)
+
+        # Third row where to put the results data
+        self.dataTarget = QComboBox()
+        self.dataTarget.addItem(NEWPLOT)
+        self.dataTarget.setEditable(True)
+        self.dataTarget.currentIndexChanged.connect(self._allowNewPlotEditable)
+        layout.addRow("Display results on:", self.dataTarget)
+
+        # keep a list of databounds so we can switch
+        self._dataBounds = []
+        self._defaultBounds = []
+
+    def _allowNewPlotEditable(self, srcIdx):
+        if srcIdx == 0:
+            self.dataTarget.setEditable(True)
+        else:
+            self.dataTarget.setEditable(False)
+
+    def _setDataBounds(self, srcIdx):
+        lo, up = self._dataBounds[srcIdx]
+        self.lowerBoundEdit.setText(lo)
+        self.upperBoundEdit.setText(up)
+
+    def _rememberUserDataBounds(self):
+        lo = self.lowerBoundEdit.text()
+        up = self.upperBoundEdit.text()
+
+        self._dataBounds[self.dataSource.currentIndex()] = (lo, up)
+
+    def resetDataBounds(self, pressed, srcIdx=None):
+        if srcIdx is None:
+            srcIdx = self.dataSource.currentIndex()
+
+        self._dataBounds[srcIdx] = self._defaultBounds[srcIdx]
+
+        if srcIdx == self.dataSource.currentIndex():
+            lo, up = self._dataBounds[srcIdx]
+            self.lowerBoundEdit.setText(lo)
+            self.upperBoundEdit.setText(up)
+
+        else:
+            self.dataSource.setCurrentIndex(srcIdx)
+
+    def updateDataBounds(self, srcIdx, lower, upper):
+        if lower > upper:
+            upper, lower = lower, upper
+
+        lower, upper = str(int(lower)), str(int(upper))
+        self._dataBounds[srcIdx] = (lower, upper)
+
+        if self.dataSource.currentIndex() == srcIdx:
+            self.lowerBoundEdit.setText(lower)
+            self.upperBoundEdit.setText(upper)
+
+        else:
+            self.dataSource.setCurrentIndex(srcIdx)
+
+    def addDataSource(self, name, upperBound, lowerBound):
+        upperBound, lowerBound = str(int(upperBound)), str(int(lowerBound))
+        self._dataBounds.append((lowerBound, upperBound))
+        self._defaultBounds.append((lowerBound, upperBound))
+        self.dataSource.addItem(name)
+
+    def getDataSelect(self):
+        itemIdx = self.dataSource.currentIndex()
+
+        # first index means new plot, so set it to None
+        # otherwise shift the index by one to ignore new plot options
+        plotIdx = self.dataTarget.currentIndex()
+        plotIdx = plotIdx - 1 if plotIdx > 0 else None
+
+        lowerBound = int(self.lowerBoundEdit.text())
+        upperBound = int(self.upperBoundEdit.text())
+        plotBounds = slice(lowerBound, upperBound)
+
+        plotterName = None
+        if plotIdx is None:
+            # first row is the name of the new plotter
+            plotterName = self.dataTarget.currentText()
+
+        return itemIdx, plotIdx, plotBounds, plotterName
+
+    def addDataTarget(self, name):
+        self.dataTarget.addItem(name)
+
+
 class MainAnalyzePlotWidget(QGroupBox):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.setTitle("Manipulate and analye signal")
+        self.setTitle("Manipulate and analyze data")
 
-        layout = QGridLayout()
+        layout = QHBoxLayout()
         self.setLayout(layout)
 
+        self.dataManager = DataMangerWidget()
+        layout.addWidget(self.dataManager)
+
         self.processWidget = MainProcessWidget()
-        layout.addWidget(self.processWidget, 1, 0)
+        layout.addWidget(self.processWidget)
 
         self.filterWidget = MainFilterWidget()
-        layout.addWidget(self.filterWidget, 1, 1)
+        layout.addWidget(self.filterWidget)
+
+    def getTargetName(self):
+        return self.dataManager.getTargetName()
+
+    def addDataTarget(self, **kwargs):
+        self.dataManager.addDataTarget(**kwargs)
+
+    def addDataSource(self, **kwargs):
+        self.dataManager.addDataSource(**kwargs)
+
+    def getDataSelect(self, **kwargs):
+        return self.dataManager.getDataSelect(**kwargs)
 
     def getFilterOptions(self):
         return self.filterWidget.getFilterOptions()
@@ -220,7 +422,13 @@ class MainAnalyzePlotWidget(QGroupBox):
         return self.processWidget.getProcessOptions()
 
     def processButton(self):
-        return self.processWidget.applyButton
+        return self.processWidget.processButton()
 
     def filterButton(self):
         return self.filterWidget.applyButton
+
+    def setDataRange(self, *args, **kwargs):
+        self.dataManager.setDataRange(*args, **kwargs)
+
+    def updateDataBounds(self, *args, **kwargs):
+        self.dataManager.updateDataBounds(*args, **kwargs)

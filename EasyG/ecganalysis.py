@@ -1,22 +1,44 @@
 import heartpy as hp
 
 
-def process(*args, **kwargs):
-    data, measures = hp.process(*args, **kwargs)
+def heartPyProcess(x, y, processOpts):
+    def correctSpelling():
+        for m in dict(measures):
+            if m == "breathingrate":
+                _m = "Breathingrate"
 
-    for m in dict(measures):
-        if m == "breathingrate":
-            _m = "Breathingrate"
+            else:
+                _m = m.upper()
 
-        else:
-            _m = m.upper()
+            measures[_m] = f"{measures.pop(m):.3f}"
 
-        measures[_m] = f"{measures.pop(m):.3f}"
+    def getPeakLists():
+        x_accepted, x_rejected = [], []
+        y_accepted, y_rejected = [], []
 
-    return data, measures
+        for idx, xIdx in enumerate(data["peaklist"]):
+            if data["binary_peaklist"][idx]:
+                x_accepted.append(x[xIdx])
+                y_accepted.append(y[xIdx])
+
+            else:
+                x_rejected.append(x[xIdx])
+                y_rejected.append(y[xIdx])
+
+        return (x_accepted, y_accepted), (x_rejected, y_rejected)
+
+    data, measures = hp.process(y, **processOpts)
+
+    correctSpelling()
+    accepted_peaks, rejected_peaks = getPeakLists()
+
+    resultDict = {"accepted_peaks": accepted_peaks,
+                  "rejected_peaks": rejected_peaks}
+
+    return measures, resultDict
 
 
-PROCESSORDICT = {"HeartPy.process": process}
+PROCESSORDICT = {"HeartPy.process": heartPyProcess}
 
 
 def getProcessor(name):
