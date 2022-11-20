@@ -321,12 +321,4 @@ class ECGPlotWidget(pg.PlotWidget):
         return item
 
     def containsItemWithName(self, name):
-        for item in self.listDataItems():
-            if item.name() == name:
-                result = True
-                break
-
-        else:
-            result = False
-
-        return result
+        return any(item.name() == name for item in self.listDataItems())

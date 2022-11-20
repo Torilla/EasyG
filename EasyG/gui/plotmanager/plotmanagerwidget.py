@@ -5,16 +5,10 @@ import numpy as np
 from .layoutwidget.splitter import ToplevelSplitter
 from .datawidget.datawidget import DataWidget
 from .plotwidget.plotwidget import ECGPlotWidget, ECGPlotDataItem
-from EasyG.ecg import ecgprocessors
+from EasyG.ecg import ecgprocessors, ecgfilters
 
 
 class PlotManagerWidget(QtWidgets.QWidget):
-    # dataOptions, filterOptions
-    FilterButtonPressed = QtCore.pyqtSignal(dict, dict)
-
-    # dataOptions, manipulationOptions
-    DataManipulationButtonPressed = QtCore.pyqtSignal(dict, dict)
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -255,35 +249,65 @@ class PlotManagerWidget(QtWidgets.QWidget):
         rate = self.getGlobalPlotItem(itemName).estimateSampleRate()
         self.dataWidget.setSamplingRate(rate)
 
+    def _getDataFromOptions(self, dataOptions):
+        x, y = self.getGlobalPlotItem(dataOptions["data source"]).getData()
+
+        lower, upper = dataOptions["data bounds"]
+
+        if (lower and upper) is not None:
+            bounds = np.where(np.logical_and(lower <= x, x <= upper))
+
+        elif lower is not None:
+            bounds = np.where(lower <= x)
+
+        elif upper is not None:
+            bounds = np.where(x <= upper)
+
+        else:
+            bounds = slice(0, -1)
+
+        return x[bounds], y[bounds]
+
     @QtCore.pyqtSlot()
     def onDataWidgetProcessButtonPressed(self):
-        def getResults():
-            processor = getattr(ecgprocessors, processOptions.pop("processor"))
-
-            x, y = self.getGlobalPlotItem(dataOptions["data source"]).getData()
-
-            lower, upper = dataOptions["data bounds"]
-            bounds = np.where(np.logical_and(lower <= x, x <= upper))
-            x = x[bounds]
-            y = y[bounds]
-
-            return x, y, processor(y, **processOptions)
-
         dataOptions = self.dataWidget.getCurrentDataOptions()
         processOptions = self.dataWidget.getCurrentProcessOptions()
 
-        x, y, results = getResults()
-        idx = self.indexOfPlotWidget(
+        x, y = self._getDataFromOptions(dataOptions)
+        processor = getattr(ecgprocessors, processOptions.pop("processor"))
+        data, measures = processor(y, **processOptions)
+
+        rowIdx, colIdx = self.indexOfPlotWidget(
             self.plotWidgetFromTitle(dataOptions["data target"]))
 
-        self.plot(*idx, x=x, y=y, pen=dataOptions["target color"])
+        self.plot(rowIdx=rowIdx, columnIdx=colIdx,
+                  x=x[data["peaklist"]], y=y[data["peaklist"]],
+                  pen=None, symbolBrush="g", symbol="x", symbolSize=11,
+                  name="accepted peaks")
+
+        self.plot(rowIdx=rowIdx, columnIdx=colIdx,
+                  x=x[data["removed_beats"]], y=y[data["removed_beats"]],
+                  pen=None, symbolBrush="r", symbol="o", symbolSize=11,
+                  name="rejected peaks")
 
     @QtCore.pyqtSlot()
     def onDataWidgetFilterButtonPressed(self):
         dataOptions = self.dataWidget.getCurrentDataOptions()
         filterOptions = self.dataWidget.getCurrentFilterOptions()
 
-        self.FilterButtonPressed.emit(dataOptions, filterOptions)
+        x, y = self._getDataFromOptions(dataOptions)
+
+        y = ecgfilters.HeartPyFilter(y, **filterOptions)
+
+        rowIdx, colIdx = self.indexOfPlotWidget(
+            self.plotWidgetFromTitle(dataOptions["data target"]))
+
+        name = dataOptions["target name"] or filterOptions["filtertype"]
+
+        self.plot(rowIdx=rowIdx, columnIdx=colIdx,
+                  x=x, y=y,
+                  pen=dataOptions["target color"],
+                  name=name)
 
     @QtCore.pyqtSlot()
     def onDataManipulationButtonPressed(self):
