@@ -26,6 +26,9 @@ class PlotManagerWidget(QtWidgets.QWidget):
         # dict of global ploItems {plotItemName: plotItem}
         self._globalPlotItems = {}
 
+        from EasyG.gui.resultwidget import ResultTableWidget
+        self.resT = ResultTableWidget()
+
         # connect the spliterPlotWidget
         self.splitterWidget.ColumnInsertRequest.connect(
             self.onColumnInsertRequest)
@@ -301,7 +304,6 @@ class PlotManagerWidget(QtWidgets.QWidget):
 
         colIdx, rowIdx = self.indexOfPlotWidget(
             self.plotWidgetFromTitle(dataOptions["data target"]))
-        print(rowIdx, colIdx)
         name = dataOptions["target name"] or filterOptions["filtertype"]
 
         self.plot(rowIdx=rowIdx, columnIdx=colIdx,
