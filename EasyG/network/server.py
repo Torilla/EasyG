@@ -32,7 +32,6 @@ class EasyGAuthenticationServer(QObject):
 
     @pyqtSlot()
     def onNewConnection(self):
-        @pyqtSlot()
         def _disconnectSignals():
             self.authenticationProtocol.authSuccess.disconnect(conS)
             self.authenticationProtocol.authFailed.disconnect(conF)

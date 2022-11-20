@@ -25,8 +25,7 @@ class EasyGServerPluginHandler(QObject):
         return self._serverPlugin
 
     def _disconnectServerSignals(self):
-        serv = self.serverPlugin()
-        if serv is not None:
+        if (serv := self.serverPlugin()) is not None:
             if self._serverErrorCon:
                 serv.acceptError.disconnect(self._serverErrorCon)
                 self._serverErrorCon = None

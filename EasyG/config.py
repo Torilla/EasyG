@@ -1,13 +1,21 @@
 from pathlib import Path
+import pkgutil
 from configparser import ConfigParser
+import json
 
-from PyQt5.QtNetwork import QHostAddress
+import PyQt5.QtWidgets
+import PyQt5.QtGui
+import PyQt5.QtCore
+import PyQt5.QtNetwork
 
 import pyqtgraph as pg
 
 DEFAULTUSERCONFIGPATH = Path.home() / ".config/EasyG/easyg.ini"
+ANALYZECONFIGPATH = "gui/plotmanager/datawidget/analyzewidget/analyzewidget.ini"
+
+
 converters = {
-    "HostAddress": QHostAddress,
+    "HostAddress": PyQt5.QtNetwork.QHostAddress,
     "Geometry": lambda s: tuple(int(g) for g in s.split())
 }
 
@@ -29,6 +37,29 @@ def getConfig(configfile=DEFAULTUSERCONFIGPATH, section=None):
         config = config[section]
 
     return config
+
+
+_ANALYZECONFIG = None
+
+
+def getAnalyzeWidgetConfig(configfile=ANALYZECONFIGPATH):
+    def readConfig():
+        converters = {"dict": json.loads,
+                      "list": json.loads}
+
+        global _ANALYZECONFIG
+        _ANALYZECONFIG = ConfigParser(default_section=None,
+                                      converters=converters)
+        _ANALYZECONFIG.optionxform = str
+
+        data = pkgutil.get_data(__name__, configfile).decode()
+        _ANALYZECONFIG.read_string(data)
+        _ANALYZECONFIG.file = configfile
+
+    if _ANALYZECONFIG is None or _ANALYZECONFIG.file != configfile:
+        readConfig()
+
+    return _ANALYZECONFIG
 
 
 def setPyqtgraphConfig(config=getConfig()):
