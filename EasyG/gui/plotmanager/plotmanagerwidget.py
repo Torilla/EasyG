@@ -299,9 +299,9 @@ class PlotManagerWidget(QtWidgets.QWidget):
 
         y = ecgfilters.HeartPyFilter(y, **filterOptions)
 
-        rowIdx, colIdx = self.indexOfPlotWidget(
+        colIdx, rowIdx = self.indexOfPlotWidget(
             self.plotWidgetFromTitle(dataOptions["data target"]))
-
+        print(rowIdx, colIdx)
         name = dataOptions["target name"] or filterOptions["filtertype"]
 
         self.plot(rowIdx=rowIdx, columnIdx=colIdx,
