@@ -184,8 +184,14 @@ class ECGPlotDataItem(GlobalPlotDataItem):
     def estimateSampleRate(self):
         x = self.getData()[0]
 
+        if x:
+            rate = len(x) / (x[-1] - x[0]) * 1000
+
+        else:
+            rate = 0
+
         # assuming millisecond timestamps
-        return len(x) / (x[-1] - x[0]) * 1000
+        return rate
 
 
 class ECGPlotWidget(pg.PlotWidget):

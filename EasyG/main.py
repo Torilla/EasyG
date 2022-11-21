@@ -5,8 +5,8 @@ from EasyG.config import getConfig
 from EasyG.network import server
 from EasyG.network.tcp import EasyGTCPSocket
 from EasyG.network.client import EasyGTCPClient
-from EasyG.gui.mainwidget import EasyGMainWindow
-from EasyG.gui.plotwidget import EasyGServerPlotWidget
+from EasyG.gui.mainwidget import MainWindow
+
 
 Config = getConfig()
 
@@ -94,11 +94,8 @@ class EasyGGUI(EasyGServerPluginHandler):
         self._startServerCon = None
         self._stopServerCon = None
 
+        self.mainWindow = MainWindow()
         super().__init__(serverPlugin=serverPlugin, *args, **kwargs)
-
-        self.mainWindow = EasyGMainWindow(
-            title=Config.get("gui", "title"),
-            geometry=Config.getGeometry("gui", "geometry"))
 
     def show(self):
         self.mainWindow.show()
@@ -145,9 +142,13 @@ class EasyGGUI(EasyGServerPluginHandler):
         return self.setServerPlugin(serv)
 
     def _addServerPlotTabWidget(self, client):
-        widget = EasyGServerPlotWidget(serverClient=client)
         clientID = client.getClientID()
         tabName = f"EasyG Server Client: {clientID}"
 
-        self.mainWindow.addMainPlotWidgetTab(tabName=tabName, widget=widget,
-                                             name=clientID)
+        widget = self.mainWindow.centralWidget().newMainPlotTab(
+            tabName=tabName,
+            x=[], y=[],
+            plotName=clientID,
+            plotterName=tabName)
+
+        widget.addServerStatus()

@@ -5,6 +5,7 @@ import numpy as np
 from .layoutwidget.splitter import ToplevelSplitter
 from .datawidget.datawidget import DataWidget
 from .plotwidget.plotwidget import ECGPlotWidget, ECGPlotDataItem
+from .serverstatus.status import ServerStatusWidget
 from EasyG.ecg import ecgprocessors, ecgfilters
 
 
@@ -16,18 +17,13 @@ class PlotManagerWidget(QtWidgets.QWidget):
         self.setLayout(layout)
 
         self.splitterWidget = ToplevelSplitter()
-        layout.addWidget(self.splitterWidget)
-        layout.setStretch(0, 1)
+        layout.addWidget(self.splitterWidget, 1)
 
         self.dataWidget = DataWidget()
-        layout.addWidget(self.dataWidget)
-        layout.setStretch(1, 0)
+        layout.addWidget(self.dataWidget, 0)
 
         # dict of global ploItems {plotItemName: plotItem}
         self._globalPlotItems = {}
-
-        from EasyG.gui.resultwidget import ResultTableWidget
-        self.resT = ResultTableWidget()
 
         # connect the spliterPlotWidget
         self.splitterWidget.ColumnInsertRequest.connect(
@@ -48,6 +44,10 @@ class PlotManagerWidget(QtWidgets.QWidget):
             self.onPlotTableItemClicked)
         self.dataWidget.CurrentDataSourceChanged.connect(
             self.currentDataSourceChanged)
+
+    def addServerStatus(self):
+        self.serverStatus = ServerStatusWidget()
+        self.layout().insertWidget(0, self.serverStatus)
 
     def registerGlobalPlotItem(self, item):
         if not item.isGlobalAncestor():
