@@ -1,0 +1,2 @@
+class CentralProcessingUnit(object):
+    pass

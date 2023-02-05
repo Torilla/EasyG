@@ -1,4 +1,4 @@
-from PyQt5 import QtCore, QtWidgets
+from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtCore import Qt
 
 
@@ -66,25 +66,30 @@ class SplitterProxyWidget(QtWidgets.QWidget):
         self.buttonLayout = QtWidgets.QHBoxLayout()
         self.layout().addLayout(self.buttonLayout, 0, 0,
                                 Qt.AlignTop | Qt.AlignRight)
+
+        def extendHorizontal():
+            if not hasattr(self, "extendHorizontalButton"):
+                # only add it once
+                self.extendHorizontalButton = QtWidgets.QToolButton()
+                self.extendHorizontalButton.setToolTip(
+                    "Add a new plot to the right of this plot.")
+                self.extendHorizontalButton.setToolButtonStyle(
+                    Qt.ToolButtonStyle.ToolButtonIconOnly)
+
+                icon = self.style().standardIcon(
+                    QtWidgets.QStyle.SP_ToolBarHorizontalExtensionButton)
+                self.extendHorizontalButton.setIcon(icon)
+                self.extendHorizontalButton.clicked.connect(
+                    self._onExtendHorizontalRequest)
+
+                self.buttonLayout.addWidget(self.extendHorizontalButton)
+
         extendVertical()
+        extendHorizontal()
         quit()
 
-    def addExtendHorizontalButton(self):
-        if not hasattr(self, "extendHorizontalButton"):
-            # only add it once
-            self.extendHorizontalButton = QtWidgets.QToolButton()
-            self.extendHorizontalButton.setToolTip(
-                "Add a new plot to the right of this plot.")
-            self.extendHorizontalButton.setToolButtonStyle(
-                Qt.ToolButtonStyle.ToolButtonIconOnly)
-
-            icon = self.style().standardIcon(
-                QtWidgets.QStyle.SP_ToolBarHorizontalExtensionButton)
-            self.extendHorizontalButton.setIcon(icon)
-            self.extendHorizontalButton.clicked.connect(
-                self._onExtendHorizontalRequest)
-
-            self.buttonLayout.addWidget(self.extendHorizontalButton)
+        # extend horizontal is hidden by default
+        self.extendHorizontalButton.hide()
 
     def __getattr__(self, attr):
         return getattr(self._widget, attr)
@@ -98,7 +103,7 @@ class SublevelSplitter(QtWidgets.QSplitter):
         raise NotImplementedError("Can't set orientation of SublevelSplitter")
 
 
-class ToplevelSplitter(QtWidgets.QSplitter):
+class GridSplitterWidget(QtWidgets.QSplitter):
     proxyWidgetType = SplitterProxyWidget
 
     # columnIdx
@@ -110,59 +115,24 @@ class ToplevelSplitter(QtWidgets.QSplitter):
     def __init__(self, parent=None):
         super().__init__(orientation=Qt.Horizontal, parent=parent)
 
-    def setOrientation(self, *args, **kwargs):
-        raise NotImplementedError("Can't set orientation of ToplevelSplitter")
-
-    def insertColumn(self, columnIdx=None):
-        if columnIdx is None:
-            columnIdx = self.count()
-
-        super().insertWidget(columnIdx, SublevelSplitter())
-
-    def removeColumn(self, columnIdx):
-        widget = self.widget(columnIdx)
-        widget.hide()
-        widget.setParent(None)
-        widget.deleteLater()
-
-    def insertWidget(self, widget, columnIdx=None, rowIdx=None):
-        if columnIdx is None:
-            columnIdx = self.count() - 1
-
-        colWidget = self.widget(columnIdx)
-
-        if rowIdx is None:
-            rowIdx = colWidget.count()
-
+    def _initNewProxyWidget(self, widget):
         proxyWidget = self.proxyWidgetType(widget=widget)
         proxyWidget.extendVerticalButtonClicked.connect(
             self.onSublevelExtendVertical)
         proxyWidget.quitButtonClicked.connect(self.onSublevelQuit)
-
-        if colWidget.count() == 0:
-            # first widget in the column gets a extend horizontal button
-            proxyWidget.addExtendHorizontalButton()
-
-        # always connect the extend horizontal button because it might
-        # get added later
         proxyWidget.extendHorizontalButtonClicked.connect(
             self.onSublevelExtendHorizontal)
 
-        colWidget.insertWidget(rowIdx, proxyWidget)
+        return proxyWidget
 
-    def removeWidget(self, columnIdx, rowIdx):
-        widget = self.widget(columnIdx, rowIdx)
-        widget.hide()
-        widget.deleteLater()
-        widget.setParent(None)
+    def setOrientation(self, *args, **kwargs):
+        raise NotImplementedError("Can't set orientation of ToplevelSplitter")
 
-        if self.widget(columnIdx).count() == 0:
-            # if the column is now empty, remove it
-            self.removeColumn(columnIdx)
+    def columnCount(self):
+        return self.count()
 
-        elif rowIdx == 0:
-            # the first item should always have extend horiztonal button
-            self.widget(columnIdx, 0).addExtendHorizontalButton()
+    def rowCountOfColumn(self, columnIdx):
+        return self.widget(columnIdx).count()
 
     def widget(self, columnIdx, rowIdx=None):
         colWidget = super().widget(columnIdx)
@@ -182,6 +152,33 @@ class ToplevelSplitter(QtWidgets.QSplitter):
             widget = colWidget
 
         return widget
+
+    def insertColumn(self, columnIdx):
+        super().insertWidget(columnIdx, SublevelSplitter())
+
+    def insertWidget(self, columnIdx, rowIdx, widget):
+        widget = self._initNewProxyWidget(widget)
+
+        if rowIdx == 0 or not self.rowCountOfColumn(columnIdx):
+            # first widget in the row gets extend horizontal button
+            widget.extendHorizontalButton.show()
+
+            try:
+                # if we had one in first position, hide its button instead
+                self.widget(columnIdx, 0).extendHorizontalButton.hide()
+            except IndexError:
+                pass
+
+        self.widget(columnIdx).insertWidget(rowIdx, widget)
+
+    def removeWidget(self, columnIdx, rowIdx):
+        if rowIdx == 0 and self.rowCountOfColumn(columnIdx) > 1:
+            self.widget(columnIdx, 1).extendHorizontalButton.show()
+
+        widget = self.widget(columnIdx, rowIdx)
+        widget.hide()
+        widget.deleteLater()
+        widget.setParent(None)
 
     def indexOf(self, widget):
         isProxy = isinstance(widget, SplitterProxyWidget)
@@ -208,13 +205,6 @@ class ToplevelSplitter(QtWidgets.QSplitter):
             raise ValueError(f"No such widget: {widget}")
 
         return columnIdx, rowIdx
-
-    def iterWidgets(self):
-        for colIdx in range(self.count()):
-            colWidget = self.widget(colIdx)
-            for rowIdx in range(colWidget.count()):
-                # we store proxywidgets, return the widget contained inside
-                yield colWidget.widget(rowIdx).widget()
 
     @QtCore.pyqtSlot(bool, object)
     def onSublevelQuit(self, checked, widget):

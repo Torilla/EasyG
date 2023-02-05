@@ -5,6 +5,9 @@ test*.py
 # Client databse
 *.db
 
+# sublime files
+*.sublime-workspace
+*.sublime-project
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
