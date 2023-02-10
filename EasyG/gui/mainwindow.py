@@ -1,14 +1,10 @@
 from PyQt5 import QtCore, QtWidgets
 
-from .centraltabwidget import CentralTabWidget
-from EasyG2.ecg import exampledata
+from .centraltabwidget import TabManagerWidget
 
 
-class EasyGMainWindow(QtWidgets.QMainWindow):
-    # namespace
-    newDataNamespace = QtCore.pyqtSignal(str)
-    # namespace, name, data
-    newStaticDataSource = QtCore.pyqtSignal(str, str, tuple)
+class MainWindow(QtWidgets.QMainWindow):
+    OpenExampleRequest = QtCore.pyqtSignal()
 
     def __init__(self, windowTitle="EasyG", geometry=(100, 100, 800, 600)):
         super().__init__()
@@ -16,8 +12,8 @@ class EasyGMainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle(windowTitle)
         self.setGeometry(*geometry)
 
-        self.centralWidget = CentralTabWidget()
-        self.setCentralWidget(self.centralWidget)
+        self.tabManager = TabManagerWidget()
+        self.setCentralWidget(self.tabManager)
 
         self._initMenuBar()
 
@@ -31,7 +27,7 @@ class EasyGMainWindow(QtWidgets.QMainWindow):
             self.openMenu.addAction(self.openFileAction)
 
             self.openExampleAction = QtWidgets.QAction("&Example")
-            self.openExampleAction.triggered.connect(self.openExample)
+            self.openExampleAction.triggered.connect(self.OpenExampleRequest.emit)
             self.openMenu.addAction(self.openExampleAction)
 
             self.fileMenu.addSeparator()
@@ -59,10 +55,3 @@ class EasyGMainWindow(QtWidgets.QMainWindow):
         menuBar = self.menuBar()
         fileMenu()
         serverMenu()
-
-    def openExample(self):
-        x, y, exampleName = exampledata.openExample()
-
-        tabName = f"{exampleName} Example"
-        plotManager = self.centralWidget.addNewPlotManager(tabName)
-        plotter = plotManager.init()

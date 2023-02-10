@@ -181,7 +181,7 @@ class GridSplitterWidget(QtWidgets.QSplitter):
         widget.setParent(None)
 
     def indexOf(self, widget):
-        isProxy = isinstance(widget, SplitterProxyWidget)
+        isProxy = isinstance(widget, self.proxyWidgetType)
 
         for columnIdx in range(self.count()):
             colWidget = self.widget(columnIdx)
