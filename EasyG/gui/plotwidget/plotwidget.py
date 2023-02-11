@@ -1,12 +1,118 @@
-from PyQt5 import QtWidgets
+from PyQt5 import QtCore, QtWidgets, QtGui
+from PyQt5.QtCore import Qt
 
 import pyqtgraph as pg
 
 from .splitter import GridSplitterWidget
 
 
+class EeasyGPlotWidget(pg.PlotWidget):
+    # self
+    TitleChangeRequest = QtCore.pyqtSignal(object)
+    # x0, x1 coordinates of self._ROI
+    NewROICoordinates = QtCore.pyqtSignal(float, float)
+
+    def __init__(self, parent=None, background='default', plotItem=None, **kargs):
+        # ----------------------------------------------------------------------
+        # canno't use super().__init__ to call the baseclass init because
+        # it conflicts with QObject init. We have to call the code ourself.
+        # It is taken directly from the source:
+        # https://pyqtgraph.readthedocs.io/en/latest/_modules/pyqtgraph/widgets/PlotWidget.html#PlotWidget.getPlotItem
+        # ----------------------------------------------------------------------
+        pg.GraphicsView.__init__(self, parent, background=background)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
+        self.enableMouse(False)
+        if plotItem is None:
+            self.plotItem = pg.PlotItem(**kargs)
+        else:
+            self.plotItem = plotItem
+        self.setCentralItem(self.plotItem)
+        # Explicitly wrap methods from plotItem
+        # NOTE: If you change this list, update the documentation above as well.
+        for m in ['addItem', 'removeItem', 'autoRange', 'clear', 'setAxisItems', 'setXRange',
+                  'setYRange', 'setRange', 'setAspectLocked', 'setMouseEnabled',
+                  'setXLink', 'setYLink', 'enableAutoRange', 'disableAutoRange',
+                  'setLimits', 'register', 'unregister', 'viewRect']:
+            setattr(self, m, getattr(self.plotItem, m))
+        self.plotItem.sigRangeChanged.connect(self.viewRangeChanged)
+        # -----------------------END OF ORIGINAL INIT---------------------------
+
+        self.addLegend()
+
+        # region of interest, activated by double clicking
+        self._ROI = pg.RectROI(pos=(0, 0), size=(0, 0),
+                               pen=pg.mkPen("g", width=1.5, style=Qt.DashLine),
+                               invertible=True)
+        self._ROI.sigRegionChangeFinished.connect(self.emitROICoordinates)
+        self._ROI.hide()
+        self.addItem(self._ROI)
+
+        # connection of the setROISize slot upon double click
+        self._setROISizeConnection = None
+
+        self.titleLabelContextMenu = QtWidgets.QMenu(self)
+        self.titleLabelEditTextAction = self.titleLabelContextMenu.addAction(
+            "Edit Title")
+
+        # inject a contextMenuEventHandler into the titleLabel so we can catch
+        # right click events
+        self.plotItem.titleLabel.contextMenuEvent = self._showTitleContextMenu
+
+    def _showTitleContextMenu(self, event):
+        event.accept()
+        action = self.titleLabelContextMenu.exec(QtGui.QCursor.pos())
+
+        if action == self.titleLabelEditTextAction:
+            self.TitleChangeRequest.emit(self)
+
+    def getTitle(self):
+        return self.plotItem.titleLabel.text
+
+    def setTitle(self, title):
+        self.plotItem.setTitle(title)
+
+    def mouseDoubleClickEvent(self, event):
+        event.accept()
+
+        self._ROI.setSize((0, 0))
+
+        pos = self.getViewBox().mapSceneToView(event.pos())
+        self._ROI.setPos(pos)
+        self._setROISizeConnection = self.scene().sigMouseMoved.connect(
+            self._setROISize)
+        self._ROI.show()
+
+    @QtCore.pyqtSlot(object)
+    def _setROISize(self, pos):
+        pos = self.getViewBox().mapSceneToView(pos)
+        self._ROI.setSize(pos - self._ROI.pos())
+
+    def mouseReleaseEvent(self, event):
+        if self._setROISizeConnection is not None:
+            event.accept()
+            self.scene().sigMouseMoved.disconnect(self._setROISizeConnection)
+            self._setROISizeConnection = None
+
+        else:
+            super().mouseReleaseEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.RightButton and self._ROI.isVisible():
+            event.accept()
+            self._ROI.hide()
+
+        else:
+            super().mousePressEvent(event)
+
+    def emitROICoordinates(self):
+        x0 = self._ROI.pos().x()
+        x1 = x0 + self._ROI.size().x()
+
+        self.NewROICoordinates.emit(x0, x1)
+
+
 class PlotManagerWidget(QtWidgets.QWidget):
-    plotWidgetType = pg.PlotWidget
+    plotWidgetType = EeasyGPlotWidget
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -47,4 +153,3 @@ class PlotManagerWidget(QtWidgets.QWidget):
 
     def addItemToPlot(self, columnIdx, rowIdx, item, *args, **kwargs):
         self.splitterWidget.widget(columnIdx, rowIdx).addItem(item, *args, **kwargs)
-
