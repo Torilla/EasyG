@@ -138,6 +138,8 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+# virtualenv
+easyg_venv
 
 # Spyder project settings
 .spyderproject

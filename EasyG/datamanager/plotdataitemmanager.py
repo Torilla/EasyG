@@ -13,19 +13,32 @@ class PlotDataItemManager(object):
         # the FileSystem stores the actual data
         self.fs = filesystem.FileSystem()
 
-    def _pipeDataToPlotItems(self, path: str, obj: filesystem.DataObject):
-        for plotItem in self.fs.getDataObject(path).data():
-            plotItem.setData(*obj.data())
+    def _pipeDataToPlotItems(self, path: str):
+        for plotItem in self.getPlotItems(path):
+            plotItem.setData(*self.fs.getData(path))
 
-    def registerDataObject(self, obj: filesystem.DataObject, path: str):
-        self.fs.mkdir(path=path, data=obj)
+    def registerPlotItemData(self, path: str, data):
+        self.fs.mkdir(path=path, data=data)
 
-        plotItem = self.plotItemType(*obj.data(), name=path)
+        plotItem = self.plotItemType(*data, name=path)
         plotItemPath = self._plotItemsPathTmplt.format(path)
-        self.fs.mkdir(path=plotItemPath, data=filesystem.DataObject([plotItem]))
+        self.fs.mkdir(path=plotItemPath, data=[plotItem])
 
-        obj.DataChanged.connect(
-            lambda data: self._pipeDataToPlotItems(plotItemPath, data))
+        self.fs.watchData(path, self._pipeDataToPlotItems)
+
+        return plotItem
+
+    def registerNetworkClientPlotItem(self, path, client):
+        client = filesystem.NetworkClientDataObject(client)
+        self.fs.mkdir(path, data=client)
+        plotItem = self.plotItemType(*client.data(), name=path)
+        plotItemPath = self._plotItemsPathTmplt.format(path)
+        self.fs.mkdir(path=plotItemPath, data=[plotItem])
+
+        client.DataChanged.connect(lambda: self._pipeDataToPlotItems(path))
+        client.startParsing()
+
+        return plotItem
 
     def getPlotItems(self, dataPath):
         path = self._plotItemsPathTmplt.format(dataPath)

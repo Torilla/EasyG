@@ -6,10 +6,10 @@ from EasyG.network.client import EasyGServerSideAuthentication
 
 
 class EasyGAuthenticationServer(QObject):
-    newClient = pyqtSignal(EasyGTCPClient)
-    authenticationFailed = pyqtSignal(EasyGTCPClient)
+    NewClientAvailable = pyqtSignal(EasyGTCPClient)
+    AuthenticationFailed = pyqtSignal(EasyGTCPClient)
 
-    acceptError = pyqtSignal(EasyGTCPSocket.SocketError)
+    AcceptError = pyqtSignal(EasyGTCPSocket.SocketError)
 
     def __init__(self, hostAddress, hostPort,
                  server=EasyGTCPServer(),
@@ -23,7 +23,7 @@ class EasyGAuthenticationServer(QObject):
 
         self.server = server
         self.server.setParent(self)
-        self.server.acceptError.connect(self.acceptError)
+        self.server.acceptError.connect(self.AcceptError)
 
         self.clientType = clientType
 
@@ -41,13 +41,13 @@ class EasyGAuthenticationServer(QObject):
             _disconnectSignals()
             client = self.clientType(socket=socket, clientID=clientID,
                                      parent=self)
-            self.newClient.emit(client)
+            self.NewClientAvailable.emit(client)
 
         @pyqtSlot(int)
         def failClient(errCode):
             _disconnectSignals()
             client = self.clientType(socket=socket, parent=self)
-            self.authenticationFailed.emit(client)
+            self.AuthenticationFailed.emit(client)
 
         socket = self.server.nextPendingConnection()
 

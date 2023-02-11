@@ -1,12 +1,18 @@
 import csv
-from pathlib import Path
 from scipy.misc import electrocardiogram
 import numpy as np
 
 from PyQt5.QtWidgets import QInputDialog
 
+from EasyG.config import DEFAULT_CONFIG
 
-DEFAULTEXAMPLEPATH = Path.home() / "Projects/Python/EasyG/exampledata"
+
+def discover_examples():
+    with DEFAULT_CONFIG["Examples"]["path_context_manager"] as path:
+        for file in path.glob("*.csv"):
+            DynamicExamples[file.name] = file
+
+    return
 
 
 def getSciPyExample():
@@ -17,13 +23,10 @@ def getSciPyExample():
     return x, y
 
 
-def load_csv_example(exampleName, sampleRateHz=250):
+def load_csv_example(fn, sampleRateHz=250):
     x, y = [], []
 
-    if not exampleName.endswith(".csv"):
-        exampleName += ".csv"
-
-    with open(DEFAULTEXAMPLEPATH / exampleName) as f:
+    with open(fn) as f:
         for line in csv.reader(f):
             assert len(line) == 1
             y.extend(line)
@@ -36,21 +39,26 @@ def load_csv_example(exampleName, sampleRateHz=250):
     return x, y
 
 
-NAMEDICT = {"SciPy": getSciPyExample,
-            "HeartPy: e0103": lambda: load_csv_example("e0103"),
-            "HeartPy: e0110": lambda: load_csv_example("e0110"),
-            "HeartPy: e0124": lambda: load_csv_example("e0124")}
-
-
 def openExample():
-    exampleName, valid = QInputDialog.getItem(None, "Select Example Type",
-                                              "List of Example Types",
-                                              NAMEDICT, 0, False)
+    if not DynamicExamples:
+        discover_examples()
+
+    exampleName, valid = QInputDialog.getItem(
+        None, "Select Example Type", "List of Example Types",
+        list(DynamicExamples) + list(BuiltinExamples), 0, False)
 
     if valid:
-        x, y = NAMEDICT[exampleName]()
+        if exampleName in BuiltinExamples:
+            x, y = BuiltinExamples[exampleName]()
+
+        else:
+            x, y = load_csv_example(DynamicExamples[exampleName])
 
     else:
         x, y = None, None
 
     return x, y, exampleName
+
+
+DynamicExamples = {}
+BuiltinExamples = {"SciPy": getSciPyExample}

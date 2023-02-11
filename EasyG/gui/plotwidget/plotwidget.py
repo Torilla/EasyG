@@ -6,7 +6,7 @@ import pyqtgraph as pg
 from .splitter import GridSplitterWidget
 
 
-class EeasyGPlotWidget(pg.PlotWidget):
+class EasyGPlotWidget(pg.PlotWidget):
     # self
     TitleChangeRequest = QtCore.pyqtSignal(object)
     # x0, x1 coordinates of self._ROI
@@ -17,7 +17,7 @@ class EeasyGPlotWidget(pg.PlotWidget):
         # canno't use super().__init__ to call the baseclass init because
         # it conflicts with QObject init. We have to call the code ourself.
         # It is taken directly from the source:
-        # https://pyqtgraph.readthedocs.io/en/latest/_modules/pyqtgraph/widgets/PlotWidget.html#PlotWidget.getPlotItem
+        # https://pyqtgraph.readthedocs.io/en/latest/_modules/pyqtgraph/widgets/PlotWidget.html
         # ----------------------------------------------------------------------
         pg.GraphicsView.__init__(self, parent, background=background)
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
@@ -28,7 +28,6 @@ class EeasyGPlotWidget(pg.PlotWidget):
             self.plotItem = plotItem
         self.setCentralItem(self.plotItem)
         # Explicitly wrap methods from plotItem
-        # NOTE: If you change this list, update the documentation above as well.
         for m in ['addItem', 'removeItem', 'autoRange', 'clear', 'setAxisItems', 'setXRange',
                   'setYRange', 'setRange', 'setAspectLocked', 'setMouseEnabled',
                   'setXLink', 'setYLink', 'enableAutoRange', 'disableAutoRange',
@@ -112,7 +111,7 @@ class EeasyGPlotWidget(pg.PlotWidget):
 
 
 class PlotManagerWidget(QtWidgets.QWidget):
-    plotWidgetType = EeasyGPlotWidget
+    plotWidgetType = EasyGPlotWidget
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
