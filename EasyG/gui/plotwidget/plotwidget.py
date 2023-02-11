@@ -17,6 +17,23 @@ class PlotManagerWidget(QtWidgets.QWidget):
         self.splitterWidget = GridSplitterWidget()
         layout.addWidget(self.splitterWidget, 1)
 
+        self.splitterWidget.ColumnInsertRequest.connect(
+            self._onColumnInsertRequest)
+        self.splitterWidget.WidgetInsertRequest.connect(
+            self._onWidgetInsertRequest)
+        self.splitterWidget.WidgetRemoveRequest.connect(
+            self._onWidgetRemoveRequest)
+
+    def _onColumnInsertRequest(self, columnIdx):
+        self.insertColumn(columnIdx)
+        self.insertPlotWidget(columnIdx, 0)
+
+    def _onWidgetInsertRequest(self, columnIdx, rowIdx):
+        self.insertPlotWidget(columnIdx, rowIdx)
+
+    def _onWidgetRemoveRequest(self, columnIdx, rowIdx):
+        self.removePlotWidget(columnIdx, rowIdx)
+
     def insertColumn(self, columnIdx):
         self.splitterWidget.insertColumn(columnIdx)
 
@@ -25,5 +42,9 @@ class PlotManagerWidget(QtWidgets.QWidget):
 
         self.splitterWidget.insertWidget(columnIdx, rowIdx, widget)
 
+    def removePlotWidget(self, columnIdx, rowIdx):
+        self.splitterWidget.removeWidget(columnIdx, rowIdx)
+
     def addItemToPlot(self, columnIdx, rowIdx, item, *args, **kwargs):
         self.splitterWidget.widget(columnIdx, rowIdx).addItem(item, *args, **kwargs)
+
