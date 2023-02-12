@@ -309,6 +309,9 @@ class FileSystem(object):
 
         return node
 
+    def ls(self, path):
+        return [node.ID() for node in self._cd(path).children()]
+
     def mkdir(self, path: str, data: typing.Any | DataObject = None, parents=False) -> None:
         """Creates a child INode at /path/to/INode
 

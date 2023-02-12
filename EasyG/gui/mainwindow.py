@@ -55,3 +55,6 @@ class MainWindow(QtWidgets.QMainWindow):
         menuBar = self.menuBar()
         fileMenu()
         serverMenu()
+
+    def updateTabDockWidgetConfigs(self, config):
+        self.tabManager.updateDockWidgetConfig(config)

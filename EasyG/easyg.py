@@ -1,5 +1,6 @@
 from PyQt5 import QtCore
 from PyQt5.QtNetwork import QHostAddress
+from PyQt5.QtCore import Qt
 
 from EasyG.datamanager import plotdataitemmanager
 from EasyG.gui import mainwindow
@@ -13,9 +14,13 @@ class EasyG(QtCore.QObject):
 
         self.gui = mainwindow.MainWindow()
         self.datamanager = plotdataitemmanager.PlotDataItemManager()
+        self.datamanager.AvailableDataChanged.connect(self.onAvailableDataChanged)
         self.server = server.EasyGAuthenticationServer(QHostAddress("127.0.0.1"), 9999)
         self.server.NewClientAvailable.connect(self.onNewServerClient)
-        self.server.startListening()
+        self.gui.startServerAction.triggered.connect(self.server.startListening)
+        self.gui.stopServerAction.triggered.connect(self.server.close)
+        self.gui.startServerAction.setEnabled(True)
+        self.gui.stopServerAction.setEnabled(True)
         self.gui.OpenExampleRequest.connect(self.onOpenExampleRequest)
 
     def onNewServerClient(self, client):
@@ -31,10 +36,14 @@ class EasyG(QtCore.QObject):
         if x is None or y is None:
             return
 
-        tabName = f"{exampleName} Example"
+        tabName = f"{exampleName.split('.')[0]} Example"
         tab = self.gui.centralWidget().addTab(tabName)
-
+        self.gui.addDockWidget(Qt.LeftDockWidgetArea, tab.dockWidget)
         path = f"/{tabName}"
-        plotItem = self.datamanager.registerPlotItemData(path, data=(x, y))
-
+        plotItem = self.datamanager.registerPlotItemData(path, data=(x, y),
+                                                         plotItemName=exampleName)
         tab.plotManager.addItemToPlot(0, 0, plotItem)
+
+    def onAvailableDataChanged(self):
+        config = self.datamanager.getPlotDataItemConfiguration()
+        self.gui.updateTabDockWidgetConfigs(config)

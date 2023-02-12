@@ -144,7 +144,6 @@ class PlotManagerWidget(QtWidgets.QWidget):
 
     def insertPlotWidget(self, columnIdx, rowIdx, *args, **kwargs):
         widget = self.plotWidgetType(*args, **kwargs)
-
         self.splitterWidget.insertWidget(columnIdx, rowIdx, widget)
 
     def removePlotWidget(self, columnIdx, rowIdx):
@@ -152,3 +151,9 @@ class PlotManagerWidget(QtWidgets.QWidget):
 
     def addItemToPlot(self, columnIdx, rowIdx, item, *args, **kwargs):
         self.splitterWidget.widget(columnIdx, rowIdx).addItem(item, *args, **kwargs)
+
+    def getCurrentPlotConfiguration(self):
+        return [{self.splitterWidget.widget(colIdx, rowIdx).getTitle():
+                 self.splitterWidget.widget(colIdx, rowIdx).listDataItems()
+                 for rowIdx in range(self.splitterWidget.rowCountOfColumn(colIdx))}
+                for colIdx in range(self.splitterWidget.columnCount())]
