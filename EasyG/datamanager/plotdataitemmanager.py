@@ -8,8 +8,6 @@ class PlotDataItemManager(QtCore.QObject):
     plotItemType = pg.PlotDataItem
     _plotItemsPathTmplt = "{}" + f"{filesystem.SEP}{plotItemType.__name__}s"
 
-    AvailableDataChanged = QtCore.pyqtSignal()
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -29,8 +27,6 @@ class PlotDataItemManager(QtCore.QObject):
         self.fs.mkdir(path=plotItemPath, data=[plotItem])
         self.fs.watchData(path, self._pipeDataToPlotItems)
 
-        self.AvailableDataChanged.emit()
-
         return plotItem
 
     def registerNetworkClientPlotItem(self, path, client, plotItemName=None):
@@ -42,8 +38,6 @@ class PlotDataItemManager(QtCore.QObject):
 
         client.DataChanged.connect(lambda: self._pipeDataToPlotItems(path))
         client.startParsing()
-
-        self.AvailableDataChanged.emit()
 
         return plotItem
 

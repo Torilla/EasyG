@@ -71,25 +71,32 @@ class PlotDataItemAndPlotterListWidget(QtWidgets.QDockWidget):
         self.setWidget(contentWidget)
 
     def _iterBoxes(self):
+        # last 'widget' is stretch, so omit it
         return (self._contentLayout.itemAt(i).widget()
-                for i in range(self._contentLayout.count()))
+                for i in range(self._contentLayout.count() - 1))
 
     def clear(self):
+        for idx in range(self._contentLayout.count() - 1):
+            w = self._contentLayout.takeAt(idx).widget()
+            w.setParent(None)
+
+    def addBox(self, boxTitle, boxContent):
+        box = CollapsibleDataList(boxTitle)
+        for item in boxContent:
+            box.addItem(item)
+
+        self._contentLayout.insertWidget(self._contentLayout.count() - 1, box)
+
+    def updateBoxTitle(self, oldTitle, newTitle):
         for box in self._iterBoxes():
-            box.setParent(None)
-
-    def addPlotItem(self, itemName):
-        for box in self._iterBoxes():
-            box.addItem(itemName)
-
-    def addPlot(self, plotName):
-        box = CollapsibleDataList(plotName)
-        self._contentLayout.addWidget(box)
-
-        for itemName in self._contentLayout.widget(0).listItemNames():
-            box.addItem(itemName)
+            if box.toggleButton.text() == oldTitle:
+                box.toggleButton.setText(newTitle)
 
     def setConfiguration(self, ownedItems, forreignItems):
         self.clear()
-        for item in owenedItems:
-            self.addPlotItem(item)
+        for plot, items in ownedItems.items():
+            self.addBox(plot, items)
+
+        if forreignItems:
+            self.addBox("Other Tabs", forreignItems)
+

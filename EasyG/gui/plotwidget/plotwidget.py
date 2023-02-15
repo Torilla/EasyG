@@ -113,6 +113,11 @@ class EasyGPlotWidget(pg.PlotWidget):
 class PlotManagerWidget(QtWidgets.QWidget):
     plotWidgetType = EasyGPlotWidget
 
+    # previous, newtitle
+    TitleChanged = QtCore.pyqtSignal(str, str)
+
+    PlotConfigOutdated = QtCore.pyqtSignal()
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -132,18 +137,34 @@ class PlotManagerWidget(QtWidgets.QWidget):
     def _onColumnInsertRequest(self, columnIdx):
         self.insertColumn(columnIdx)
         self.insertPlotWidget(columnIdx, 0)
+        self.PlotConfigOutdated.emit()
 
     def _onWidgetInsertRequest(self, columnIdx, rowIdx):
         self.insertPlotWidget(columnIdx, rowIdx)
+        self.PlotConfigOutdated.emit()
 
     def _onWidgetRemoveRequest(self, columnIdx, rowIdx):
         self.removePlotWidget(columnIdx, rowIdx)
+        self.PlotConfigOutdated.emit()
+
+    def _onTitleChangeRequest(self, widget, defaultTitle="Plot"):
+        oldTitle = widget.getTitle()
+        newTitle, isValid = QtWidgets.QInputDialog.getText(self,
+                                                           "Edit plot title",
+                                                           "New title:",
+                                                           text=defaultTitle)
+
+        if isValid:
+            widget.setTitle(newTitle)
+
+            self.TitleChanged.emit(oldTitle, newTitle)
 
     def insertColumn(self, columnIdx):
         self.splitterWidget.insertColumn(columnIdx)
 
     def insertPlotWidget(self, columnIdx, rowIdx, *args, **kwargs):
         widget = self.plotWidgetType(*args, **kwargs)
+        widget.TitleChangeRequest.connect(self._onTitleChangeRequest)
         self.splitterWidget.insertWidget(columnIdx, rowIdx, widget)
 
     def removePlotWidget(self, columnIdx, rowIdx):
@@ -153,7 +174,11 @@ class PlotManagerWidget(QtWidgets.QWidget):
         self.splitterWidget.widget(columnIdx, rowIdx).addItem(item, *args, **kwargs)
 
     def getCurrentPlotConfiguration(self):
-        return [{self.splitterWidget.widget(colIdx, rowIdx).getTitle():
-                 self.splitterWidget.widget(colIdx, rowIdx).listDataItems()
-                 for rowIdx in range(self.splitterWidget.rowCountOfColumn(colIdx))}
-                for colIdx in range(self.splitterWidget.columnCount())]
+        config = {}
+
+        for colIdx in range(self.splitterWidget.columnCount()):
+            for rowIdx in range(self.splitterWidget.rowCountOfColumn(colIdx)):
+                w = self.splitterWidget.widget(colIdx, rowIdx)
+                config[w.getTitle()] = [i.name() for i in w.listDataItems()]
+
+        return config
