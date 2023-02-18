@@ -4,6 +4,9 @@ from typing import Optional, Any
 from pathlib import Path
 
 
+_ROOT_ID = Path.home().root
+
+
 class FileSystemError(Exception):
     pass
 
@@ -28,7 +31,7 @@ class INodeSet(set):
 
     def remove(self, ID: str) -> None:
         for node in self:
-            if node.ID() == ID:
+            if node.ID == ID:
                 super().remove(node)
                 node.setParent(None)
                 break
@@ -70,7 +73,7 @@ class INode(object):
         return self._ID
 
     def setID(self, ID: str) -> None:
-        if (ID == FileSystem._ROOT_ID and self.parent is not None):
+        if (ID == _ROOT_ID and self.parent is not None):
             raise ValueError(f"Invalid INode ID: {ID}")
         self._ID = ID
 
@@ -115,14 +118,18 @@ class INode(object):
 
         return child
 
+    def tree(self, indent: int = 0) -> str:
+        string = self.ID
+
+        for child in self.children:
+            string += "\n" + "|  " * indent + f"|__{child.tree(indent=indent + 1)}"
+
+        return string
+
     def __repr__(self) -> str:
         return "{} (ID: '{}' parent: {})".format(super().__repr__(),
                                                  self.ID,
-                                                 self.parent,
-                                                 self.children)
-
-
-INodeType = tuple[str, Optional[INode], Optional[Any]]
+                                                 self.parent)
 
 
 class InvalidPathError(FileSystemError):
@@ -130,10 +137,8 @@ class InvalidPathError(FileSystemError):
 
 
 class FileSystem(object):
-    _ROOT_ID = Path.home().root
-
     def __init__(self):
-        self._root = INode(ID=FileSystem._ROOT_ID, parent=None)
+        self._root = INode(ID=_ROOT_ID, parent=None)
         self._cwd = self._root
         self._stack = []
 
@@ -149,24 +154,23 @@ class FileSystem(object):
     def cwd(self) -> INode:
         return self._cwd
 
-    def cd(self, path: str | Path) -> None:
-        node = self.cwd
-
+    def cd(self, path: str | Path = _ROOT_ID) -> None:
         path = Path(path)
         parts = path.parts
 
         if path.root:
-            parts = parts[1:]     # remove root
+            parts = parts[1:]     # remove root from path, this is an implicit cd to root
             node = self.root
+        else:
+            node = self.cwd
 
         for part in parts:
             if part == ".":
                 continue
 
             elif part == "..":
-                node = node.parent
-                if not node:
-                    raise InvalidPathError(path)
+                # if we are at the root, .. points back to itself
+                node = node.parent or node
 
             else:
                 try:
@@ -179,7 +183,13 @@ class FileSystem(object):
 
     def pushd(self, path: str | Path) -> None:
         self.stack.append(self._cwd)
-        self.cd(path)
+        try:
+            self.cd(path)
+
+        except FileSystemError as err:
+            # restore the old stack in case the cd fails
+            self.stack.pop()
+            raise err from None
 
     def popd(self) -> None:
         self._cwd = self.stack.pop()
@@ -197,3 +207,21 @@ class FileSystem(object):
             raise InvalidPathError(err) from None
         finally:
             self.popd()
+
+    def rmdir(self, path: str | Path) -> INode:
+        path = Path(path)
+        if not path.name:
+            raise InvalidPathError(path)
+
+        self.pushd(path.parent)
+        try:
+            child = self.cwd.removeChild(path.name)
+        except NoSuchChildINodeError as err:
+            raise InvalidPathError(err) from None
+        finally:
+            self.popd()
+
+        return child
+
+    def tree(self) -> str:
+        return self.cwd.tree()
