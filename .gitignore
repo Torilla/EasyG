@@ -1,5 +1,4 @@
 #Custom dev files not meant for uploading
-test*.py
 .gittoken
 
 # Client databse
