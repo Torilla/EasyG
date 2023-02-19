@@ -1,381 +1,514 @@
-import typing
+from __future__ import annotations
+from typing import Optional, Any, Iterator
 
-from PyQt5 import QtCore
-
-
-ROOT = "/"
-SEP = "/"
+from functools import wraps
+from pathlib import Path
 
 
-class DataObject(QtCore.QObject):
-    DataChanged = QtCore.pyqtSignal()
-
-    def __init__(self, data=None, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._data = data
-
-    def data(self):
-        return self._data
-
-    def setData(self, data):
-        self._data = data
-        self.DataChanged.emit()
-
-
-class NetworkClientDataObject(DataObject):
-    def __init__(self, client):
-        # only one list active, otherwise signals will be duplicate
-        x, y = [], []
-        super().__init__(data=(x, y))
-
-        self.client = client
-        self._newDataConnection = None
-
-    @QtCore.pyqtSlot(list)
-    def _appendData(self, data: list[float, float]) -> None:
-        _x, _y = self.data()
-        x, y = data
-        _x.append(x)
-        _y.append(y)
-
-        self.DataChanged.emit()
-
-    def startParsing(self):
-        if not self._newDataConnection:
-            self._newDataConnection = self.client.newLineOfData.connect(
-                self._appendData)
-
-            self.client.startParsing()
-
-    def stopParsing(self):
-        if self._newDataConnection:
-            self.client.newLineOfData.disconnect(self._newDataConnection)
-
-            self.client.stopParsing()
-
-
-class NoSuchChildINodeError(ValueError):
+class FileSystemError(Exception):
     pass
 
 
-class INodeNotEmptyError(ValueError):
+class ChildINodeAlreayExistsError(FileSystemError):
     pass
 
 
-class ChildINodeAlreayExistsError(ValueError):
+class NoSuchChildINodeError(FileSystemError):
     pass
+
+
+class INodeChildSet(object):
+
+    """class INodeChildSet
+
+    Class storing a unique set of INodes. Uniqueness of INodes is based on
+    their ID. Each ID can only exist once.
+    """
+
+    def __init__(self):
+        self._members = set()
+
+    def __iter__(self) -> Iterator[INode]:
+        """Return an iterator of the members of the set
+
+        Returns:
+            Iterator: The iterator returning the members of the set
+        """
+        return iter(self._members)
+
+    def __contains__(self, ID: str | INode) -> bool:
+        """Determins wether an INode with ID equal to the given ID is present
+
+        Args:
+            ID (str | INode): The ID or an INode with the same ID to test for presence
+
+        Returns:
+            bool: True if an INode with the tested ID is present, otherwise false
+        """
+        if isinstance(ID, INode):
+            ID = ID.ID
+
+        return any(n.ID == ID for n in self)
+
+    def __bool__(self) -> bool:
+        """Determines the truth value of the set
+
+        Returns:
+            bool: Returns false if the set is empty else true
+        """
+        return bool(self._members)
+
+    def add(self, node: INode) -> None:
+        """Adds another node to the set if no node with the same ID is already
+        present
+
+        Args:
+            node (INode): The node to add
+
+        Raises:
+            ChildINodeAlreayExistsError: If a node with the same ID already exists
+            TypeError: If node is not an instance of INode
+        """
+        if not isinstance(node, INode):
+            raise TypeError(f"Expected instance of {INode}, got '{node}'")
+
+        if node in self:
+            raise ChildINodeAlreayExistsError(node)
+
+        self._members.add(node)
+
+    def get(self, ID: str | INode) -> INode:
+        """Return the node with ID equal to the given ID
+
+        Args:
+            ID (str | INode): The ID of the node or a node with the same ID to return
+
+        Returns:
+            INode: The node with ID equal to the given ID
+
+        Raises:
+            NoSuchChildINodeError: If no node with ID equal to the given ID is
+                present
+        """
+        if isinstance(ID, INode):
+            ID = ID.ID
+
+        for member in self:
+            if member.ID == ID:
+                break
+        else:
+            raise NoSuchChildINodeError(ID)
+
+        return member
+
+    def remove(self, ID: str | INode) -> INode:
+        """Removes a node from the set
+
+        Args:
+            ID (str | INode): The ID of the node to remove or a node with the
+                same ID
+
+        Returns:
+            INode: The removed member
+
+        Raises:
+            NoSuchChildINodeError: Description
+        """
+        if isinstance(ID, INode):
+            ID = ID.ID
+
+        for member in self:
+            if member.ID == ID:
+                self._members.remove(member)
+                break
+
+        else:
+            raise NoSuchChildINodeError(ID)
+
+        return member
 
 
 class INode(object):
 
-    """Emulates a Directory in a Files System. Can have a parent and children.
-    Stores arbitray  data.
+    """class repesenting a single node in a file system structure. It is
+    inspired by the Linux INode.
     """
 
-    def __init__(self, ID, parent=None, children=None, data=None):
-        """initalize INode class
+    def __init__(self, ID: str, parent: Optional[INode] = None,
+                 data: Optional[Any] = None):
+        """Initalize a new INode
 
         Args:
-            ID (str): Name of the INode in the File System
-            parent (INode, optional): Parent INode
-            children (list, optional): List of child INodes
-            data (DataObject, optional): DataObject that is stored in this INode
+            ID (str): The ID of the new INode.
+            parent (Optional[INode], optional): The parent of the new INode
+            data (Optional[Any], optional): The data to store in this INode
         """
-        self._children = children or []
         self.setID(ID)
-        self.setParent(parent)
+        self.set_parent(parent)
         self.setData(data)
 
+        self._children = INodeChildSet()
+
+    @property
     def ID(self) -> str:
-        """returns the name of the INode
+        """Return the ID of the INode
 
         Returns:
-            str: the name of the INode
+            str: The ID of the INode
         """
         return self._ID
 
     def setID(self, ID) -> None:
-        """sets the name of the INode
+        """Sets the ID of the INode to ID
 
         Args:
-            ID (TYPE): the name of the INode
+            ID (TYPE): The new ID
         """
         self._ID = ID
 
-    def parent(self) -> str:
-        """returns the parent of the INode
+    @property
+    def parent(self) -> INode | None:
+        """Returns the parent of the INode
 
         Returns:
-            str: the parent of the INode
+            INode | None: The parent of the INode. Returns None if no parent
+                INode is set
         """
-        return self._parent
+        return getattr(self, "_parent", None)
 
-    def setParent(self, parent: 'INode') -> None:
-        """sets the parent of the INode
+    def set_parent(self, parent: INode | None) -> None:
+        """Set the parent of the INode to parent and add self to the list of
+        children of parent. This will also remove the INode from the previous
+        parent's list of children if the INode has a parent.
 
         Args:
-            parent (INode): the parent of the INode
+            parent (INode | None): The new parent.
         """
+        if (oldParent := self.parent) is not None:
+            oldParent.children.remove(self)
+
+        if parent is not None:
+            parent.children.add(self)
+
         self._parent = parent
 
-    def children(self) -> list:
-        """returns the children of the INode
+    def addChild(self, child: INode) -> None:
+        """Add a new child INode to the INode
+
+        Args:
+            child (INode): The INode to add as child. The current INode will
+                take ownership of the child INode
+        """
+        child.set_parent(self)
+
+    def removeChild(self, child: str | INode) -> INode:
+        """Remove a child INode
+
+        Args:
+            child (str | INode): The INode or the ID of the INode to remove.
+                The child INode will not longer be owned by the current INode.
 
         Returns:
-            list:  the children of the INode
+            INode: The removed INode
+
+        Raises:
+            NoSuchChildINodeError: If the request child does not exist.
+        """
+
+        try:
+            child = self.children.get(child)
+        except NoSuchChildINodeError as err:
+            raise err from None
+
+        child.set_parent(None)
+
+        return child
+
+    def getChild(self, ID: str) -> INode:
+        """Return the INode with ID equal to the given ID
+
+        Args:
+            ID (str): The ID of the requested INode
+
+        Returns:
+            INode: The request INode with ID equal to the given ID
+        """
+        return self.children.get(ID)
+
+    @property
+    def data(self) -> Any:
+        """Return the data stored in this INode
+
+        Returns:
+            Any: The stored data
+        """
+        return self._data
+
+    def setData(self, data: Any) -> None:
+        """Set the stored data in this INode to data
+
+        Args:
+            data (Any): The data to store
+        """
+        self._data = data
+
+    @property
+    def children(self) -> INodeChildSet:
+        """The ChildINodeSet that stores the children of this INode
+
+        Returns:
+            INodeChildSet: The ChildINodeSet that stores the children of this
+                INode
         """
         return self._children
 
-    def hasChild(self, ID: str) -> bool:
-        """Returns true if any child of this INode has a name equal to ID
+    def tree(self, _indent: int = 0) -> str:
+        """Return a tree representation of the tree where the current INode is
+            the root and its children are the leafs
 
         Args:
-            ID (str): the ID of the child INode in question
+            _indent (int, optional): Internal variable not meant for using directly
 
         Returns:
-            bool: True if a child with name equal to ID exists
+            str: The tree representation of this INode tree
         """
-        return next((True for child in self.children() if child.ID() == ID),
-                    False)
+        string = self.ID
 
-    def addChild(self, child: 'INode') -> None:
-        """adds INode child to the list of children
-
-        Args:
-            child (INode): the  INode to add to the child list
-
-        Raises:
-            ChildINodeAlreayExistsError: if an INode with name equal to ID
-                already is present
-        """
-        if self.hasChild(child.ID()):
-            raise ChildINodeAlreayExistsError(child.ID())
-        child.setParent(self)
-
-        self._children.append(child)
-
-    def addChildINode(self, *args, **kwargs) -> None:
-        """Convienent wrapper that creates an INode and adds it to the list
-        of children
-
-        Args:
-            *args: All arguments are passed to the child INode initalizer
-            **kwargs: All keyword arguments are passed to the child INode
-                initalizer
-        """
-        self.addChild(INode(*args, **kwargs))
-
-    def removeChild(self, ID: str) -> None:
-        """Removes child INode with name ID from the list of children.
-
-        Args:
-            ID (str): the name of the child INode
-
-        Raises:
-            NoSuchChildINodeError: If the child I node does not exists
-        """
-        idx = next((idx for idx, child in enumerate(self.children())
-                    if child.ID() == ID), None)
-
-        if idx is None:
-            raise NoSuchChildINodeError(repr(ID))
-
-        child = self._children.pop(idx)
-        child.setParent(None)
-
-        return child
-
-    def getChild(self, ID: str) -> None:
-        """Returns the child with name equal to ID
-
-        Args:
-            ID (str): the name of the child INode
-
-        Returns:
-            None: the target child INode
-
-        Raises:
-            NoSuchChildINodeError: If the child INode does not exist
-        """
-        for child in self.children():
-            if child.ID() == ID:
-                break
-        else:
-            raise NoSuchChildINodeError(repr(ID))
-
-        return child
-
-    def dataObject(self):
-        """returns the stored data
-
-        Returns:
-            DtaObject: the stored DataObject
-        """
-        if not hasattr(self, "_data"):
-            self._data = DataObject()
-
-        return self._data
-
-    def data(self):
-        d = self.dataObject().data()
-
-        return d
-
-    def setData(self, data: DataObject | typing.Any) -> None:
-        """Sets the stored data
-
-        Args:
-            data (DataObject): the data to store
-        """
-        if not isinstance(data, DataObject):
-            self.dataObject().setData(data)
-
-        else:
-            self._data = data
-
-    def __repr__(self):
-        string = "{baserepr}(ID={ID!r}, children={children!r})"
-        return string.format(baserepr=self.__class__.__name__,
-                             ID=self.ID(),
-                             children=self.children())
-
-    def treerepr(self, indent=0):
-        string = self.ID()
-
-        for child in self.children():
-            string += "\n" + "|  " * indent + f"|__{child.treerepr(indent=indent + 1)}"
+        for child in self.children:
+            string += "\n" + "|  " * _indent + f"|__{child.tree(_indent=_indent + 1)}"
 
         return string
 
+    def __repr__(self) -> str:
+        """Return the representation of this INode
 
-class InvalidPathError(ValueError):
+        Returns:
+            str: The representation fiven as 'object (INode.ID, INode.parent)'
+        """
+        parent = self.parent
+        if parent is not None:
+            parent = parent.ID
+
+        return f"{super().__repr__()} (ID: '{self.ID}' parent: {parent})"
+
+
+class InvalidPathError(FileSystemError):
     pass
 
 
-class FileSystem(object):
+def ensureIsPathInstance(func):
+    @wraps(func)
+    def wrapper(self, path, *args, **kwargs):
+        return func(self, Path(path), *args, **kwargs)
 
-    """Class emulating a File System. It "implements" mkdir and rmdir
-    type methods to store data at arbitrary points in the "File System"
+    return wrapper
+
+
+class StupidlySimpleShell(object):
+
+    """Class emulating a very simple shell that has a few virtual filesystem
+        operations such as mkdir, rmdir, mv, cd, etc.
+
+    Attributes:
+        ROOT_ID (str): The name of the root node of the filesystem.
     """
 
-    def __init__(self) -> None:
-        """Initalize FileSystem
-        """
-        self._root = INode(ID=ROOT)
+    ROOT_ID = "/"
 
-    def root(self) -> INode:
-        """Return the root INode
+    def __init__(self):
+        self._root = INode(ID=self.ROOT_ID)
+        self._cwd = self._root
 
-        Returns:
-            INode: root INode
-        """
-        return self._root
-
-    def treerepr(self):
-        return self.root().treerepr()
-
-    def _cd(self, path: str, createParents=False) -> INode:
-        """returns the last INode in /path/to/INode
+    @ensureIsPathInstance
+    def _implicit_cd(self, path: Path,
+                     createParents: bool = False) -> INode:
+        """Return the last INode present in path.
 
         Args:
-            path (str): /path/to/the/INode
+            path (Path): The path to the INode in question
+            createParents (bool, optional): If true, any non-existing INodes
+                in path will be created on the fly
 
         Returns:
-            INode: the target INode
+            INode: The request INode
 
         Raises:
-            ValueError: When the target INode does not exist
+            NoSuchChildINodeError: If createdParents is false and any of the
+                INodes in path do not exist
         """
-
-        if not path.startswith(ROOT):
-            raise ValueError(f"path must start at root: {ROOT}, got {path}")
-
-        node = self.root()
-
-        for _node in path.removeprefix(ROOT).split(SEP):
-            if not _node:
-                continue
-
+        def getChild():
             try:
-                node = node.getChild(_node)
-            except NoSuchChildINodeError as err:
+                child = node.getChild(part)
+
+            except NoSuchChildINodeError:
                 if createParents:
-                    _node = INode(ID=_node)
-                    node.addChild(_node)
-                    node = _node
+                    child = INode(ID=part, parent=node)
 
                 else:
+                    raise
+
+            return child
+
+        # determine if we operate on the cwd or on the root
+        if path.root:
+            # remove root from the path
+            parts = path.parts[1:]
+            node = self._root
+
+        else:
+            parts = path.parts
+            node = self._cwd
+
+        for part in parts:
+            # iterate over each child INode in given path
+            if part == ".":
+                continue
+
+            elif part == "..":
+                # if the current node has no parent we are at the root.
+                # In this case '..' just points back to the root itself
+                # otherwise we want the parent node
+                node = node.parent or node
+
+            else:
+                # get the current child Node for this part of the path
+                try:
+                    node = getChild()
+                except NoSuchChildINodeError as err:
                     raise err from None
 
         return node
 
-    def ls(self, path):
-        return [node.ID() for node in self._cd(path).children()]
-
-    def mkdir(self, path: str, data: typing.Any | DataObject = None, parents=False) -> None:
-        """Creates a child INode at /path/to/INode
+    @ensureIsPathInstance
+    def cd(self, path: Path) -> None:
+        """Set the current working directory to path
 
         Args:
-            path (str): path starting at root and ending at the target INode
-            data (DataObject): data being stored at the new INode
-        """
-        _path, target = path.rsplit(SEP, maxsplit=1)
-        _path = _path or ROOT
-
-        try:
-            self._cd(_path, createParents=parents).addChildINode(ID=target, parent=self, data=data)
-        except NoSuchChildINodeError as err:
-            raise InvalidPathError(
-                f"{path}: No such INode: {err}") from None
-
-    def mv(self, src, target):
-        self._cd(target).addChild(self.rmdir(src))
-
-    def rmdir(self, path: str) -> None:
-        """Removes the INode at /path/to/INode.
-        The INode must not have children.
-
-        Args:
-            path (str): path starting at root and ending at the target INode
+            path (str | Path): The path to set the cwd to
 
         Raises:
-            ValueError: Can not remove the root node
-
-        Returns:
-            None: Description
+            NoSuchChildINodeError: If any of the INodes in path do not exist
         """
-        _path, target = path.rsplit(SEP, maxsplit=1)
-        _path = _path or ROOT
-
-        if not target:
-            raise ValueError("Can't remove root!")
-
         try:
-            return self._cd(_path).removeChild(target)
+            self._cwd = self._implicit_cd(path)
         except NoSuchChildINodeError as err:
-            raise InvalidPathError(err) from None
+            raise err from None
 
-    def setData(self, path: str, data: typing.Any | DataObject) -> None:
-        """sets the DataObject at /path/to/INode
+    @ensureIsPathInstance
+    def mkdir(self, path: Path, parents: bool = False,
+              data: Optional[Any] = None) -> None:
+        """Create a new directory in the filesystm.
 
         Args:
-            path (str): the /path/to/the/INode
-            data (DataObject): the DataObject to store at the INode
+            path (str | Path): The path to the directory to create
+            parents (bool, optional): If true, any non-existing nodes in path
+                will be created on the fly
+            data (Optional[Any], optional): The data to store in the new dir
+
+        Raises:
+            InvalidPathError: If parents is false and any of the INodes in path
+                do not exist or if there is already a target INode with the
+                same name as the new directory
         """
+        if not path.name:
+            raise InvalidPathError(path)
+
         try:
-            self._cd(path).setData(data)
+            parent = self._implicit_cd(path.parent, createParents=parents)
         except NoSuchChildINodeError as err:
-            raise InvalidPathError(err) from None
+            raise InvalidPathError(f"{path}: {err}") from None
 
-    def getDataObject(self, path: str) -> DataObject:
         try:
-            return self._cd(path).dataObject()
+            INode(ID=path.name, parent=parent, data=data)
+        except ChildINodeAlreayExistsError as err:
+            raise InvalidPathError(f"{path}: {err}") from None
+
+    @ensureIsPathInstance
+    def rmdir(self, path: Path) -> None:
+        """Removes the last INode in path from the filesystem
+
+        Args:
+            path (Path): The path to the INode to remove
+
+        Raises:
+            InvalidPathError: If the target INode does not exis
+        """
+        if not path.name:
+            raise InvalidPathError(path)
+
+        try:
+            parent = self._implicit_cd(path.parent)
+
         except NoSuchChildINodeError as err:
-            raise InvalidPathError(err) from None
+            raise InvalidPathError(f"{path}: {err}") from None
 
-    def getData(self, path: str) -> typing.Any:
-        return self.getDataObject(path).data()
+        try:
+            parent.removeChild(path.name)
+        except NoSuchChildINodeError as err:
+            raise InvalidPathError(f"{path}: {err}") from None
 
-    def watchData(self, path: str, callback: typing.Callable):
-        self.getDataObject(path).DataChanged.connect(lambda: callback(path))
+    def mv(self, src: str | Path, dest: str | Path) -> None:
+        """Summary
 
+        Args:
+            src (str | Path): The path to the src directory to move
+            dest (str | Path): The path to the directorz which to move the src
+                directory to. If the last node in dest path does not exist,
+                the old src dir will be renamed to this last node ID
+
+        Raises:
+            InvalidPathError: If the src dir does not exist or the dest path is invalid.
+        """
+        src, dest = Path(src), Path(dest)
+
+        if not src.name:
+            raise InvalidPathError(src)
+
+        src_dir = self._implicit_cd(src.parent)
+        try:
+            dest_dir = self._implicit_cd(dest)
+
+        except NoSuchChildINodeError:
+            try:
+                dest_dir = self._implicit_cd(dest.parent)
+
+            except NoSuchChildINodeError:
+                raise InvalidPathError(dest)
+
+        src_child = src_dir.removeChild(src.name)
+
+        if dest_dir.ID != dest.name:
+            # if the last dir in path does not exist, we rename the old dir to this
+            src_child.setID(dest.name)
+
+        dest_dir.addChild(src_child)
+
+    @ensureIsPathInstance
+    def getData(self, path: Path) -> Any:
+        """Returns the data stored in the last node in path
+
+        Args:
+            path (Path): The path to the INode to which to retrieve the data from
+
+        Returns:
+            Any: The data stored in the INode
+        """
+        return self._implicit_cd(path).data
+
+    @ensureIsPathInstance
+    def setData(self, path: Path, data: Any) -> None:
+        """Set the data of the node given in path to data
+
+        Args:
+            path (Path): The path of the INode where to store the data
+            data (Any): The data to store at this INode
+        """
+        self._implicit_cd(path).setData(data)
+
+    def tree(self) -> str:
+        """Return a tree representation starting at the current workind directory
+
+        Returns:
+            str: The tree representation starting at the cwd
+        """
+        return self._cwd.tree()
