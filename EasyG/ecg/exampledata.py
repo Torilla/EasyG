@@ -4,8 +4,6 @@ import numpy as np
 
 from PyQt5.QtWidgets import QInputDialog
 
-from EasyG.config import DEFAULT_CONFIG
-
 
 def discover_examples():
     with DEFAULT_CONFIG["Examples"]["path_context_manager"] as path:

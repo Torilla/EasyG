@@ -2,13 +2,18 @@
 
 This module implements a very simply virtual implementation of a filesystem
 as well as a shell (SsSh - The StupidlySimpleShell) to interact with the
-filesystem and the stored data
+filesystem and the stored data.
+
+The main functionality is bundled in StupidlySimpleShell which exposes a
+'Unix like' shell interface to create, move and delete virtual directories.
 """
 from __future__ import annotations
-from typing import Optional, Any, Iterator, Callable
+from typing import Optional, Any, Iterator
 
+import pathlib
 from functools import wraps
-from pathlib import Path
+
+from EasyG import defaults
 
 
 class FileSystemError(Exception):
@@ -33,7 +38,7 @@ class INodeChildSet:
     """class INodeChildSet
 
     Class storing a unique set of INodes. Uniqueness of INodes is based on
-    their name. Each name can only exist once.
+    their name. Each name can only exist once in the set.
     """
 
     def __init__(self):
@@ -123,7 +128,7 @@ class INodeChildSet:
             INode: The removed member
 
         Raises:
-            NoSuchChildINodeError: Description
+            NoSuchChildINodeError: If no inode with the given name exists
         """
         if isinstance(name, INode):
             name = name.name
@@ -168,7 +173,7 @@ class INode:
         Returns:
             str: The name of the INode
         """
-        return self.name
+        return self._name
 
     def set_name(self, name: str) -> None:
         """Sets the name of the INode to name
@@ -193,7 +198,9 @@ class INode:
         parent's list of children if the INode has a parent.
 
         Args:
-            parent (INode | None): The new parent.
+            parent (INode | None): The new parent INode or None. If the INode
+                already has a parent, it will remove itself from its previous
+                parent's list of child nodes.
         """
         if (old_parent := self.parent) is not None:
             old_parent.children.remove(self)
@@ -220,7 +227,7 @@ class INode:
                 The child INode will not longer be owned by the current INode.
 
         Returns:
-            INode: The removed INode
+            INode: The removed INode. It will no longer have a parent INode.
 
         Raises:
             NoSuchChildINodeError: If the request child does not exist.
@@ -308,36 +315,7 @@ class InvalidPathError(FileSystemError):
     """Raised when an invalid path is being accessed"""
 
 
-def ensure_is_path_instance(func: Callable) -> Callable:
-    """Wrapper that ensures the first positional arguemnt of instance method
-    func is given as a Path instance. All other arguments and keyword
-    parameters are forwared to the function call
-
-    Args:
-        func (Callable): The method to wrap
-
-    Returns:
-        Callable: The wrapped method
-    """
-
-    @wraps(func)
-    def wrapper(self, path: str | Path, *args, **kwargs):
-        """Wraps path in an Path instance
-
-        Args:
-            path (str | Path): Argument being wrapped as Path instance
-            *args: Forwarded to func
-            **kwargs: Forwared to func
-
-        Returns:
-            TYPE: the function call result
-        """
-        return func(self, Path(path), *args, **kwargs)
-
-    return wrapper
-
-
-class StupidlySimpleShell:
+class FileSystem:
 
     """Class emulating a very simple shell that has a few virtual filesystem
         operations such as mkdir, rmdir, mv, cd, etc.
@@ -350,27 +328,30 @@ class StupidlySimpleShell:
 
     def __init__(self):
         """Initalize a new StupdilySimpleShell instance"""
+
+        # root node of the filesystem
         self._root = INode(name=self.ROOT_NAME)
+        # current working directory, i.e a child node in the tree of self._root
         self._cwd = self._root
 
-    @ensure_is_path_instance
-    def _implicit_cd(self, path: Path, create_parents: bool = False) -> INode:
+    def _implicit_cd(
+        self, path: str | pathlib.Path, create_parents: bool = False
+    ) -> INode:
         """Return the last INode present in path.
 
         Args:
-            path (Path): The path to the INode in question
+            path (str | pathlib.Path): The path to the INode in question. If
+                given as string, it is implicitly converted to a pathlib.Path
+                instance.
             create_parents (bool, optional): If true, any non-existing INodes
                 in path will be created on the fly
 
-        Returns:
-            INode: The request INode
-
         Raises:
-            err: Description
-
-        No Longer Raises:
             NoSuchChildINodeError: If createdParents is false and any of the
                 INodes in path do not exist
+
+        Returns:
+            INode: The request INode
         """
 
         def get_child():
@@ -390,6 +371,8 @@ class StupidlySimpleShell:
                     raise
 
             return child
+
+        path = pathlib.Path(path)
 
         # determine if we operate on the cwd or on the root
         if path.root:
@@ -421,17 +404,15 @@ class StupidlySimpleShell:
 
         return node
 
-    @ensure_is_path_instance
-    def changedir(self, path: Path) -> None:
+    def cd(self, path: str | pathlib.Path) -> None:
         """Set the current working directory to path
 
         Args:
-            path (Path): The path to set the cwd to
+            path (str | pathlib.Path): The path to set the current working
+                directory to. If given as a string instance, it is implicitly
+                converted to a pathlib.Path instance.
 
         Raises:
-            err: Description
-
-        No Longer Raises:
             NoSuchChildINodeError: If any of the INodes in path do not exist
         """
         try:
@@ -439,14 +420,18 @@ class StupidlySimpleShell:
         except NoSuchChildINodeError as err:
             raise err from None
 
-    @ensure_is_path_instance
     def mkdir(
-        self, path: Path, parents: bool = False, data: Optional[Any] = None
+        self,
+        path: str | pathlib.Path,
+        parents: bool = False,
+        data: Optional[Any] = None,
     ) -> None:
         """Create a new directory in the filesystm.
 
         Args:
-            path (Path): The path to the directory to create
+            path (str | pathlib.Path): The path to the directory to create. If
+                given as a string instance, it is implicitly converted to a
+                patlib.Path instance.
             parents (bool, optional): If true, any non-existing nodes in path
                 will be created on the fly
             data (Optional[Any], optional): The data to store in the new dir
@@ -456,6 +441,8 @@ class StupidlySimpleShell:
                 do not exist or if there is already a target INode with the
                 same name as the new directory
         """
+        path = pathlib.Path(path)
+
         if not path.name:
             raise InvalidPathError(path)
 
@@ -469,16 +456,19 @@ class StupidlySimpleShell:
         except ChildINodeAlreayExistsError as err:
             raise InvalidPathError(f"{path}: {err}") from None
 
-    @ensure_is_path_instance
-    def rmdir(self, path: Path) -> None:
+    def rmdir(self, path: str | pathlib.Path) -> None:
         """Removes the last INode in path from the filesystem
 
         Args:
-            path (Path): The path to the INode to remove
+            path (str | pathlib.Path): The path to the INode which to remove.
+                If given as a string instance, it is implicitly converted to
+                a pathlib.Path instance
 
         Raises:
             InvalidPathError: If the target INode does not exis
         """
+        path = pathlib.Path(path)
+
         if not path.name:
             raise InvalidPathError(path)
 
@@ -493,22 +483,26 @@ class StupidlySimpleShell:
         except NoSuchChildINodeError as err:
             raise InvalidPathError(f"{path}: {err}") from None
 
-    def movedir(self, src: str | Path, dest: str | Path) -> None:
+    def mv(self, src: str | pathlib.Path, dest: str | pathlib.Path) -> None:
         """Move the directory specified in src to the directory specified in
         dest. If the last node in dest does not exist, but the second to last
         does, the src node is being renamed to the last node in dest path
         and added as child to the second to last node in dest.
 
         Args:
-            src (str | Path): The path to the src directory to move
-            dest (str | Path): The path to the directorz which to move the src
-                directory to. If the last node in dest path does not exist,
-                the old src dir will be renamed to this last node name
+            src (str | pathlib.Path): The path to the src directory which to is
+                to be moved. If given as a string instance, it is implicitly
+                converted to a pathlib.Path instance
+            dest (str | pathlib.Path): The path to the directory which to move
+                the src directory to. If the last node in dest path does not
+                exist, the old src dir will be renamed to this last node name.
+                If given as a string instance, it is implicitly converted to a
+                pathlib.Path instance
 
         Raises:
-            InvalidPathError: If src dir does not exist or dest path is name
+            InvalidPathError: If src dir does not exist or dest path is invalid
         """
-        src, dest = Path(src), Path(dest)
+        src, dest = pathlib.Path(src), pathlib.Path(dest)
 
         if not src.name:
             raise InvalidPathError(src)
@@ -524,33 +518,37 @@ class StupidlySimpleShell:
             except NoSuchChildINodeError:
                 raise InvalidPathError(dest) from None
 
-        src_child = src_dir.remove_child(src.name)
+        # !! This part of the code is bugged. If the src dir needs to be
+        # !! renamed but a node with this name already exists in the dest dir
+        # !! it will fail to add it as a child but it will be removed from the
+        # !! parent and thus be lost.
 
+        src_child = src_dir.remove_child(src.name)
         if dest_dir.name != dest.name:
             # if the target dir in path doesn't exist, it is the new name of
             # moved child
-            src_child.name(dest.name)
+            src_child.set_name(dest.name)
 
         dest_dir.add_child(src_child)
 
-    @ensure_is_path_instance
-    def get_data(self, path: Path) -> Any:
+    def get_data(self, path: str | pathlib.Path) -> Any:
         """Returns the data stored in the last node in path
 
         Args:
-            path (Path): The path to the INode from which to retrieve the data
+            path (str | pathlib.Path): The path to the INode from which to
+                retrieve the data
 
         Returns:
             Any: The data stored in the INode
         """
         return self._implicit_cd(path).data
 
-    @ensure_is_path_instance
-    def set_data(self, path: Path, data: Any) -> None:
+    def set_data(self, path: str | pathlib.Path, data: Any) -> None:
         """Set the data of the node given in path to data
 
         Args:
-            path (Path): The path of the INode where to store the data
+            path (str | pathlib.Path): The path of the INode where to store
+                the data at.
             data (Any): The data to store at this INode
         """
         self._implicit_cd(path).set_data(data)

@@ -6,7 +6,7 @@ from . import filesystem
 
 class PlotDataItemManager(QtCore.QObject):
     plotItemType = pg.PlotDataItem
-    _plotItemsPathTmplt = "{}" + f"{filesystem.SEP}{plotItemType.__name__}s"
+    _plotItemsPathTmplt = "{}" + f"/{plotItemType.__name__}s"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

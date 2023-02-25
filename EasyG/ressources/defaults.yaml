@@ -1,0 +1,7 @@
+---
+
+StupidlySimpleShell:
+  filesystem:
+    directories:
+      - /data
+      - /plotitems
