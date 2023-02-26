@@ -11,9 +11,6 @@ from __future__ import annotations
 from typing import Optional, Any, Iterator
 
 import pathlib
-from functools import wraps
-
-from EasyG import defaults
 
 
 class FileSystemError(Exception):
@@ -280,6 +277,9 @@ class INode:
         """
         return self._children
 
+    def list_dir(self):
+        return ['.', '..'] + [child.ID for child in self.children]
+
     def tree(self, indent: int = 0) -> str:
         """Return a tree representation of the tree where the current INode is
             the root and its children are the leafs
@@ -531,6 +531,10 @@ class FileSystem:
 
         dest_dir.add_child(src_child)
 
+    def list_dir(self, path: Optional[str | pathlib.Path] = None) -> list[str]:
+        cwd = self._implicit_cd(path) if path is not None else self._cwd
+        return cwd.list_dir()
+
     def get_data(self, path: str | pathlib.Path) -> Any:
         """Returns the data stored in the last node in path
 
@@ -560,3 +564,15 @@ class FileSystem:
             str: The tree representation starting at the cwd
         """
         return self._cwd.tree()
+
+
+class StupidlySimpleShell:
+    def __init__(self):
+        self.fs = FileSystem()
+
+        self.mkdir = self.fs.mkdir
+        self.cd = self.fs.cd
+        self.mkdir = self.fs.mkdir
+        self.rmdir = self.fs.rmdir
+        self.mv = self.fs.mv
+        self.list_dir = self.fs.list_dir
