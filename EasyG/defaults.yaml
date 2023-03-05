@@ -1,0 +1,11 @@
+---
+
+Examples:
+  builtin:
+    resources:
+      examples:
+        - "*.csv"
+    modules:
+      EasyG.ecg.exampledata: getSciPyExample
+  files: []
+  modules: {}

@@ -1,50 +1,55 @@
-from PyQt5 import QtCore
+import pathlib
+
 import pyqtgraph as pg
 
-from . import filesystem
+from EasyG.datautils import filesystem
+from EasyG.network import client as _client
 
 
-class PlotDataItemManager(QtCore.QObject):
+class ClientIDAlreadyRegisteredError(ValueError):
+    pass
+
+
+class PlotDataManager:
+    TABS_DIR = pathlib.Path("/tabs")
+    STATIC_DATA_DIR = pathlib.Path("/tabs/static_data")
+    NETWORK_CLIENTS_DIR = pathlib.Path("/tabs/network_clients")
+    NETWORK_CLIENTS_DATA_FILE = pathlib.Path("raw_data.dat")
+    PLOTITEM_DIR_NAME = "plotitems"
+
     plotItemType = pg.PlotDataItem
-    _plotItemsPathTmplt = "{}" + f"/{plotItemType.__name__}s"
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self):
+        self.shell = filesystem.StupidlySimpleShell()
 
-        # the FileSystem stores the actual data
-        self.fs = filesystem.FileSystem()
+        self.shell.mkdir(self.TABS_DIR)
+        self.shell.mkdir(self.STATIC_DATA_DIR)
+        self.shell.mkdir(self.NETWORK_CLIENTS_DIR)
 
-    def _pipeDataToPlotItems(self, path: str):
-        for plotItem in self.getPlotItems(path):
-            plotItem.setData(*self.fs.getData(path))
+    def _update_plot_item(self, plotitem_path):
+        print("hi")
+        dataFile = plotitem_path.parent / self.NETWORK_CLIENTS_DATA_FILE
+        data = self.shell.get_file(dataFile).data()
+        self.shell.get_file(plotitem_path).data().setData(*data)
 
-    def registerPlotItemData(self, path: str, data, plotItemName=None):
-        self.fs.mkdir(path=path, data=data)
+    def register_networkclient(self, client: _client.EasyGTCPClient) -> None:
+        with self.shell.managed_cd(self.NETWORK_CLIENTS_DIR) as shell:
+            clientid = client.getClientID()
 
-        plotItem = self.plotItemType(*data, name=plotItemName or path)
-        plotItemPath = self._plotItemsPathTmplt.format(path)
+            try:
+                shell.mkdir(clientid)
+            except filesystem.InvalidPathError:
+                raise ClientIDAlreadyRegisteredError(clientid)
 
-        self.fs.mkdir(path=plotItemPath, data=[plotItem])
-        self.fs.watchData(path, self._pipeDataToPlotItems)
+            shell.cd(clientid)
 
-        return plotItem
+            file = shell.touch(self.NETWORK_CLIENTS_DATA_FILE,
+                               file_type=filesystem.PointListFileObject)
+            client.newLineOfData.connect(file.appendPoint)
 
-    def registerNetworkClientPlotItem(self, path, client, plotItemName=None):
-        client = filesystem.NetworkClientDataObject(client)
-        self.fs.mkdir(path, data=client)
-        plotItem = self.plotItemType(*client.data(), name=plotItemName or path)
-        plotItemPath = self._plotItemsPathTmplt.format(path)
-        self.fs.mkdir(path=plotItemPath, data=[plotItem])
+            shell.mkdir(self.PLOTITEM_DIR_NAME)
+            plotItem = pg.PlotDataItem(name=clientid)
+            file = shell.touch(clientid)
+            file.set_data(plotItem)
 
-        client.DataChanged.connect(lambda: self._pipeDataToPlotItems(path))
-        client.startParsing()
-
-        return plotItem
-
-    def getPlotItems(self, dataPath):
-        path = self._plotItemsPathTmplt.format(dataPath)
-        return self.fs.getData(path)
-
-    def getPlotDataItemConfiguration(self):
-        return {dataNode: [item.name() for item in self.getPlotItems(f"{filesystem.ROOT}{dataNode}")]
-                for dataNode in self.fs.ls(filesystem.ROOT)}
+            shell.add_file_watcher(clientid, self._update_plot_item)

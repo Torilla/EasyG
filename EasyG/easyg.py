@@ -1,7 +1,7 @@
 from PyQt5.QtNetwork import QHostAddress
 from PyQt5.QtCore import Qt
 
-from EasyG.datamanager import plotdataitemmanager
+from EasyG.datautils import plotdataitemmanager
 from EasyG.gui import mainwindow
 from EasyG.network import server
 from EasyG.ecg import exampledata
@@ -11,7 +11,7 @@ class EasyG(object):
     def __init__(self):
         super().__init__()
 
-        self.datamanager = plotdataitemmanager.PlotDataItemManager()
+        self.datamanager = plotdataitemmanager.PlotDataManager()
 
         self.server = server.EasyGAuthenticationServer(QHostAddress("127.0.0.1"), 9999)
         self.server.NewClientAvailable.connect(self._onNewServerClient)

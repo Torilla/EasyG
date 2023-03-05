@@ -1,0 +1,16 @@
+\documentclass[tikz]{standalone}
+
+\usetikzlibrary{fit, positioning, calc}
+
+\begin{document}
+    \begin{tikzpicture}
+        \node[draw, rounded corners, font=\Large\bf] (datamanager) {Data Manager};
+        \node[draw, rounded corners, left of=datamanager, xshift=-8cm, font=\Large\bf] (server) {Server};
+        \node[draw, rounded corners, right of=datamanager, xshift=8cm, font=\Large\bf] (processor) {Data Processor};
+        \node[draw, rounded corners, below of=datamanager, yshift=-8cm, font=\Large\bf] (gui) {GUI};
+        %%
+        \draw[-stealth, font=\small] (server.east) -- (datamanager.west) node[midway, above] {register TCPClient};
+        \draw[-stealth, font=\small] ($(datamanager.south) + (5pt, 0)$) -- ($(gui.north) + (5pt, 0)$) node[rotate=90, midway, below] {Register PlotDataItem};
+        \draw[-stealth, font=\small] ($(gui.north) + (-5pt, 0)$) -- ($(datamanager.south) + (-5pt, 0)$) node[rotate=90, midway, above] {Request new PlotDataItems};
+    \end{tikzpicture}
+\end{document}

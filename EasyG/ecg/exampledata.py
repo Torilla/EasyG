@@ -1,14 +1,26 @@
+from importlib import resources
 import csv
 from scipy.misc import electrocardiogram
 import numpy as np
 
 from PyQt5.QtWidgets import QInputDialog
 
+from EasyG import defaults
+
 
 def discover_examples():
-    with DEFAULT_CONFIG["Examples"]["path_context_manager"] as path:
-        for file in path.glob("*.csv"):
-            DynamicExamples[file.name] = file
+    examples = {}
+
+    # get builtin examples:
+    cfg = defaults.Config["Examples"]["builtin"]
+
+    # get file examples
+    for rname, rpatterns in cfg["resources"]:
+        path = resources.as_file(f"EasyG.resources.{rname}")
+        for pattern in rpatterns:
+            examples.extend(list(path.glob(pattern)))
+
+    #
 
     return
 

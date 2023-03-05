@@ -1,21 +1,16 @@
-"""Module filesystem.py
-
-This module implements a very simply virtual implementation of a filesystem
-as well as a shell (SsSh - The StupidlySimpleShell) to interact with the
-filesystem and the stored data.
-
-The main functionality is bundled in StupidlySimpleShell which exposes a
-'Unix like' shell interface to create, move and delete virtual directories.
-"""
 from __future__ import annotations
-from typing import Optional, Any, Iterator
+from typing import Any, Iterator, Callable
 
+from collections import namedtuple
 import pathlib
+
+
+from PyQt5 import QtCore
 
 
 class FileSystemError(Exception):
 
-    """Raised when a FileSytem Operation Fails"""
+    """Base Exception common as parent for all FileSystem Errors"""
 
 
 class ChildINodeAlreayExistsError(FileSystemError):
@@ -38,9 +33,10 @@ class INodeChildSet:
     their name. Each name can only exist once in the set.
     """
 
-    def __init__(self):
+    def __init__(self, owner: INode):
         """Initialize new INodeChildSet"""
-        self._members = set()
+        self._members: set[INode] = set()
+        self._owner = owner
 
     def __iter__(self) -> Iterator[INode]:
         """Return an iterator of the members of the set
@@ -50,6 +46,14 @@ class INodeChildSet:
         """
         return iter(self._members)
 
+    def __len__(self) -> int:
+        """Returns the number of members in the set.
+
+        Returns:
+            int: The number of INodes in the set.
+        """
+        return len(self._members)
+
     def __contains__(self, name: str | INode) -> bool:
         """Determins wether an INode with name equal to the given name exists
 
@@ -57,12 +61,12 @@ class INodeChildSet:
             name (str | INode): The name or an INode with the same name to test
 
         Returns:
-            bool: True if an INode with the tested name exists, otherwise false
+            bool: True if an INode with the tested name exists, false otherwise
         """
         if isinstance(name, INode):
             name = name.name
 
-        return any(n.name == name for n in self)
+        return any(n.name == name for n in self) or name in (".", "..")
 
     def __bool__(self) -> bool:
         """Determines the truth value of the set
@@ -83,7 +87,7 @@ class INodeChildSet:
             TypeError: If node is not an instance of INode
         """
         if not isinstance(node, INode):
-            raise TypeError(f"Expected instance of {INode}, got '{node}'")
+            raise TypeError(f"Expected instance of {INode}, got {type(node)}")
 
         if node in self:
             raise ChildINodeAlreayExistsError(node)
@@ -106,11 +110,18 @@ class INodeChildSet:
         if isinstance(name, INode):
             name = name.name
 
-        for member in self:
-            if member.name == name:
-                break
+        if name == ".":
+            member = self._owner
+
+        elif name == "..":
+            member = self._owner.parent or self._owner
+
         else:
-            raise NoSuchChildINodeError(name)
+            for member in self:
+                if member.name == name:
+                    break
+            else:
+                raise NoSuchChildINodeError(name)
 
         return member
 
@@ -141,27 +152,199 @@ class INodeChildSet:
         return member
 
 
-class INode:
+class FileObjectAlreadyExistsError(FileSystemError):
+    pass
 
-    """class repesenting a single node in a file system structure. It is
-    inspired by the Linux INode.
+
+class NoSuchFileObject(FileSystemError):
+    pass
+
+
+class FileObjectSet:
+
+    """class FileObjectSet
+
+    Class storing a unique set of FileObjects. Uniqueness of FileObejcts is
+    based on their name. Each name can only exist once in the set.
     """
 
-    def __init__(
-        self, name: str, parent: Optional[INode] = None, data: Optional[Any] = None
-    ):
+    def __init__(self):
+        """Initialize new FileObjectSet"""
+        self._members = set()
+
+    def __iter__(self) -> Iterator[FileObject]:
+        """Return an iterator of the members of the set
+
+        Returns:
+            Iterator[FileObject]: The iterator returning the members of the set
+        """
+        return iter(self._members)
+
+    def __contains__(self, name: str | FileObject) -> bool:
+        """Determins wether a FileObject with name equal to the given name exists
+
+        Args:
+            name (str | FileObject): The name or the FileObject with the same
+                name to test
+
+        Returns:
+            bool: True if a FileObject with the tested name exists,
+                false otherwise
+        """
+        if isinstance(name, FileObject):
+            name = name.name
+
+        return any(n.name == name for n in self)
+
+    def __len__(self) -> int:
+        """Returns the number of members in the set.
+
+        Returns:
+            int: The number of INodes in the set.
+        """
+        return len(self._members)
+
+    def __bool__(self) -> bool:
+        """Determines the truth value of the set
+
+        Returns:
+            bool: Returns false if the set is empty else true
+        """
+        return bool(self._members)
+
+    def add(self, file: FileObject) -> None:
+        """Adds another FileObject to the set
+
+        Args:
+            file (FileObject): The FileObject to add
+
+        Raises:
+            FileObjectAlreadyExistsError: If a FileObject with the same name
+                already exists in the set
+            TypeError: If file is not an instance of FileObject
+        """
+        if not isinstance(file, FileObject):
+            raise TypeError(f"Expected {FileObject}, got {type(file)}")
+
+        if file in self:
+            raise FileObjectAlreadyExistsError(file.name)
+
+        self._members.add(file)
+
+    def get(self, name: str | FileObject) -> FileObject:
+        """Return the FileObject with name equal to the given name
+
+        Args:
+            name (str | FileObject): The name of the FileObject or a FileObject
+                with the same name
+
+        Returns:
+            FileObject: The FileObject with name equal to the given name
+
+        Raises:
+            NoSuchFileObject: If no FileObject with name equal to the given name
+                is present
+        """
+        if isinstance(name, FileObject):
+            name = name.name
+
+        for member in self:
+            if member.name == name:
+                break
+        else:
+            raise NoSuchFileObject(name)
+
+        return member
+
+    def remove(self, name: str | FileObject) -> FileObject:
+        """Removes a node from the set
+
+        Args:
+            name (str | FileObject): The name of the FileObject to remove or
+                a FileObject with the same name
+
+        Returns:
+            FileObject: The removed member
+
+        Raises:
+            NoSuchFileObject: If no FileObject with the given name exists
+        """
+        if isinstance(name, FileObject):
+            name = name.name
+
+        for member in self:
+            if member.name == name:
+                self._members.remove(member)
+                break
+
+        else:
+            raise NoSuchFileObject(name)
+
+        return member
+
+
+class FileObject(QtCore.QObject):
+
+    """class FileObject
+
+    class representing a single file like object that can be stored in an
+    INode.
+    """
+
+    DataChanged = QtCore.pyqtSignal()
+
+    def __init__(self, name: str, data: Any = None, *args, **kwargs):
+        """Initialize a new FileObject.
+
+        Args:
+            data (Any, optional): The data to store in this FileObject
+        """
+        super().__init__(*args, **kwargs)
+        self.name = name
+        self.set_data(data)
+
+    def data(self) -> Any:
+        return self._data
+
+    def set_data(self, data: Any) -> None:
+        self._data = data
+        self.DataChanged.emit()
+
+
+PointList2D: namedtuple[list, list] = namedtuple("PointList2D", ("x", "y"))
+
+
+class PointListFileObject(FileObject):
+    def __init__(self, name):
+        super().__init__(name=name, data=PointList2D([], []))
+
+    def appendPoint(self, data: list[float]) -> None:
+        x, y = data
+        self._data.x.append(x)
+        self._data.y.append(y)
+        self.DataChanged.emit()
+
+
+class INode:
+
+    """class INode
+    Repesenting a single node in a file system tree structure. It can
+    have a parent INode and any number of child INodes. If it has no parent
+    INode, it is considered the root of the current tree.
+    """
+
+    def __init__(self, name: str, parent: INode | None = None):
         """Initalize a new INode
 
         Args:
             name (str): The name of the new INode.
-            parent (Optional[INode], optional): The parent of the new INode
-            data (Optional[Any], optional): The data to store in this INode
+            parent (INode | None, optional): The parent of the new INode
         """
         self.set_name(name)
         self.set_parent(parent)
-        self.set_data(data)
 
-        self._children = INodeChildSet()
+        self._children = INodeChildSet(owner=self)
+        self._files = FileObjectSet()
 
     @property
     def name(self) -> str:
@@ -207,6 +390,16 @@ class INode:
 
         self._parent = parent
 
+    @property
+    def children(self) -> INodeChildSet:
+        """The ChildINodeSet that stores the children of this INode
+
+        Returns:
+            INodeChildSet: The ChildINodeSet that stores the children of this
+                INode
+        """
+        return self._children
+
     def add_child(self, child: INode) -> None:
         """Add a new child INode to the INode
 
@@ -250,36 +443,6 @@ class INode:
         """
         return self.children.get(name)
 
-    @property
-    def data(self) -> Any:
-        """Return the data stored in this INode
-
-        Returns:
-            Any: The stored data
-        """
-        return self._data
-
-    def set_data(self, data: Any) -> None:
-        """Set the stored data in this INode to data
-
-        Args:
-            data (Any): The data to store
-        """
-        self._data = data
-
-    @property
-    def children(self) -> INodeChildSet:
-        """The ChildINodeSet that stores the children of this INode
-
-        Returns:
-            INodeChildSet: The ChildINodeSet that stores the children of this
-                INode
-        """
-        return self._children
-
-    def list_dir(self):
-        return ['.', '..'] + [child.ID for child in self.children]
-
     def tree(self, indent: int = 0) -> str:
         """Return a tree representation of the tree where the current INode is
             the root and its children are the leafs
@@ -290,12 +453,33 @@ class INode:
         Returns:
             str: The tree representation of this INode tree
         """
-        string = self.name
+        string = f"{self.name}/"
+
+        for file in self._files:
+            string += "\n" + "|  " * indent + f"|__{file.name}"
 
         for kid in self.children:
             string += "\n" + "|  " * indent + f"|__{kid.tree(indent + 1)}"
 
         return string
+
+    def add_file(self, file: FileObject) -> None:
+        self._files.add(file)
+
+    def remove_file(self, filename: str) -> FileObject:
+        return self._files.remove(filename)
+
+    def get_file(self, filename: str | FileObject) -> FileObject:
+        return self._files.get(filename)
+
+    def get_path(self) -> pathlib.Path:
+        path = pathlib.Path(self.name)
+        parent = self.parent
+        while parent:
+            path = parent.name / path
+            parent = parent.parent
+
+        return path
 
     def __repr__(self) -> str:
         """Return the representation of this INode
@@ -311,31 +495,17 @@ class INode:
 
 
 class InvalidPathError(FileSystemError):
-
-    """Raised when an invalid path is being accessed"""
+    pass
 
 
 class FileSystem:
-
-    """Class emulating a very simple shell that has a few virtual filesystem
-        operations such as mkdir, rmdir, mv, cd, etc.
-
-    Attributes:
-        name (str): The name of the root node of the filesystem.
-    """
-
-    ROOT_NAME = "/"
-
     def __init__(self):
-        """Initalize a new StupdilySimpleShell instance"""
 
         # root node of the filesystem
-        self._root = INode(name=self.ROOT_NAME)
-        # current working directory, i.e a child node in the tree of self._root
-        self._cwd = self._root
+        self._root = INode(name="/")
 
-    def _implicit_cd(
-        self, path: str | pathlib.Path, create_parents: bool = False
+    def get_INode(
+        self, path: str | pathlib.Path, create_non_existing: bool = False
     ) -> INode:
         """Return the last INode present in path.
 
@@ -343,236 +513,232 @@ class FileSystem:
             path (str | pathlib.Path): The path to the INode in question. If
                 given as string, it is implicitly converted to a pathlib.Path
                 instance.
-            create_parents (bool, optional): If true, any non-existing INodes
-                in path will be created on the fly
-
-        Raises:
-            NoSuchChildINodeError: If createdParents is false and any of the
-                INodes in path do not exist
+            create_non_existing (bool, optional): If true, any non-existing
+                INodes in path will be created on the fly. False by default
 
         Returns:
-            INode: The request INode
+            INode: The requested INode
+
+        Raises:
+            NoSuchChildINodeError: If any of the INodes referenced in path do
+                not exist and create_non_existing is False.
         """
-
-        def get_child():
-            """Summary
-
-            Returns:
-                TYPE: Description
-            """
-            try:
-                child = node.get_child(part)
-
-            except NoSuchChildINodeError:
-                if create_parents:
-                    child = INode(name=part, parent=node)
-
-                else:
-                    raise
-
-            return child
 
         path = pathlib.Path(path)
 
-        # determine if we operate on the cwd or on the root
-        if path.root:
-            # remove root from the path
-            parts = path.parts[1:]
-            node = self._root
+        if not path.root:
+            # we require absolute paths
+            raise InvalidPathError(f"Path must start at root: {path}")
 
-        else:
-            parts = path.parts
-            node = self._cwd
+        parts = path.parts[1:]
+        node = self._root
 
         for part in parts:
-            # iterate over each child INode in given path
-            if part == ".":
-                continue
+            try:
+                node = node.get_child(part)
+            except NoSuchChildINodeError as err:
+                if create_non_existing:
+                    node = INode(name=part, parent=node)
 
-            if part == "..":
-                # if the current node has no parent we are at the root.
-                # In this case '..' just points back to the root itself
-                # otherwise we want the parent node
-                node = node.parent or node
-
-            else:
-                # get the current child Node for this part of the path
-                try:
-                    node = get_child()
-                except NoSuchChildINodeError as err:
+                else:
                     raise err from None
 
         return node
 
-    def cd(self, path: str | pathlib.Path) -> None:
-        """Set the current working directory to path
-
-        Args:
-            path (str | pathlib.Path): The path to set the current working
-                directory to. If given as a string instance, it is implicitly
-                converted to a pathlib.Path instance.
-
-        Raises:
-            NoSuchChildINodeError: If any of the INodes in path do not exist
-        """
-        try:
-            self._cwd = self._implicit_cd(path)
-        except NoSuchChildINodeError as err:
-            raise err from None
-
-    def mkdir(
-        self,
-        path: str | pathlib.Path,
-        parents: bool = False,
-        data: Optional[Any] = None,
-    ) -> None:
-        """Create a new directory in the filesystm.
-
-        Args:
-            path (str | pathlib.Path): The path to the directory to create. If
-                given as a string instance, it is implicitly converted to a
-                patlib.Path instance.
-            parents (bool, optional): If true, any non-existing nodes in path
-                will be created on the fly
-            data (Optional[Any], optional): The data to store in the new dir
-
-        Raises:
-            InvalidPathError: If parents is false and any of the INodes in path
-                do not exist or if there is already a target INode with the
-                same name as the new directory
-        """
+    def remove_INode(self, path: str | pathlib.Path) -> INode:
         path = pathlib.Path(path)
 
         if not path.name:
             raise InvalidPathError(path)
 
-        try:
-            parent = self._implicit_cd(path.parent, create_parents=parents)
-        except NoSuchChildINodeError as err:
-            raise InvalidPathError(f"{path}: {err}") from None
+        return self.get_INode(path.parent).remove_child(path.name)
+
+    def move_INode(self,
+                   source_path: str | pathlib.Path,
+                   target_path: str | pathlib.Path) -> None:
+        source_path = pathlib.Path(source_path)
+        target_path = pathlib.Path(target_path)
+
+        if not source_path.name:
+            raise InvalidPathError(f"Invalid source: {source_path}")
+
+        elif not target_path.name:
+            raise InvalidPathError(f"Invalid target: {target_path}")
 
         try:
-            INode(name=path.name, parent=parent, data=data)
-        except ChildINodeAlreayExistsError as err:
-            raise InvalidPathError(f"{path}: {err}") from None
-
-    def rmdir(self, path: str | pathlib.Path) -> None:
-        """Removes the last INode in path from the filesystem
-
-        Args:
-            path (str | pathlib.Path): The path to the INode which to remove.
-                If given as a string instance, it is implicitly converted to
-                a pathlib.Path instance
-
-        Raises:
-            InvalidPathError: If the target INode does not exis
-        """
-        path = pathlib.Path(path)
-
-        if not path.name:
-            raise InvalidPathError(path)
-
-        try:
-            parent = self._implicit_cd(path.parent)
-
-        except NoSuchChildINodeError as err:
-            raise InvalidPathError(f"{path}: {err}") from None
-
-        try:
-            parent.remove_child(path.name)
-        except NoSuchChildINodeError as err:
-            raise InvalidPathError(f"{path}: {err}") from None
-
-    def mv(self, src: str | pathlib.Path, dest: str | pathlib.Path) -> None:
-        """Move the directory specified in src to the directory specified in
-        dest. If the last node in dest does not exist, but the second to last
-        does, the src node is being renamed to the last node in dest path
-        and added as child to the second to last node in dest.
-
-        Args:
-            src (str | pathlib.Path): The path to the src directory which to is
-                to be moved. If given as a string instance, it is implicitly
-                converted to a pathlib.Path instance
-            dest (str | pathlib.Path): The path to the directory which to move
-                the src directory to. If the last node in dest path does not
-                exist, the old src dir will be renamed to this last node name.
-                If given as a string instance, it is implicitly converted to a
-                pathlib.Path instance
-
-        Raises:
-            InvalidPathError: If src dir does not exist or dest path is invalid
-        """
-        src, dest = pathlib.Path(src), pathlib.Path(dest)
-
-        if not src.name:
-            raise InvalidPathError(src)
-
-        src_dir = self._implicit_cd(src.parent)
-        try:
-            dest_dir = self._implicit_cd(dest)
-
+            source = self.get_INode(source_path)
         except NoSuchChildINodeError:
+            msg = f"Source does not exist: {source_path}"
+            raise InvalidPathError(msg) from None
+
+        try:
+            target = self.get_INode(target_path)
+        except NoSuchChildINodeError:
+            # if the last INode in target_path does not exist but its parent
+            # does, the last INode in target_path is the new name of the last
+            # INode in source_path. I.e it gets renamed as in bash mv command.
             try:
-                dest_dir = self._implicit_cd(dest.parent)
-
+                target = self.get_INode(target_path.parent)
             except NoSuchChildINodeError:
-                raise InvalidPathError(dest) from None
+                msg = f"Target does not exist: {target_path}"
+                raise InvalidPathError(msg) from None
 
-        # !! This part of the code is bugged. If the src dir needs to be
-        # !! renamed but a node with this name already exists in the dest dir
-        # !! it will fail to add it as a child but it will be removed from the
-        # !! parent and thus be lost.
+            source.set_name(target_path.name)
 
-        src_child = src_dir.remove_child(src.name)
-        if dest_dir.name != dest.name:
-            # if the target dir in path doesn't exist, it is the new name of
-            # moved child
-            src_child.set_name(dest.name)
+        source.set_parent(target)
 
-        dest_dir.add_child(src_child)
+    def get_fileobject(self, path: str | pathlib.Path):
+        path = pathlib.Path(path)
+        target, filename = path.parent, path.name
 
-    def list_dir(self, path: Optional[str | pathlib.Path] = None) -> list[str]:
-        cwd = self._implicit_cd(path) if path is not None else self._cwd
-        return cwd.list_dir()
+        if not (target or filename):
+            raise InvalidPathError(path)
 
-    def get_data(self, path: str | pathlib.Path) -> Any:
-        """Returns the data stored in the last node in path
+        return self.get_INode(target).get_file(filename)
 
-        Args:
-            path (str | pathlib.Path): The path to the INode from which to
-                retrieve the data
 
-        Returns:
-            Any: The data stored in the INode
-        """
-        return self._implicit_cd(path).data
+class ChangeDirContextManager:
+    def __init__(self, shell, target_dir):
+        self._shell = shell
+        self._target = target_dir
 
-    def set_data(self, path: str | pathlib.Path, data: Any) -> None:
-        """Set the data of the node given in path to data
+    def __enter__(self):
+        self._pwd = self._shell.pwd()
+        self._shell.cd(self._target)
 
-        Args:
-            path (str | pathlib.Path): The path of the INode where to store
-                the data at.
-            data (Any): The data to store at this INode
-        """
-        self._implicit_cd(path).set_data(data)
+        return self._shell
 
-    def tree(self) -> str:
-        """Return tree representation starting at the current workind directory
-
-        Returns:
-            str: The tree representation starting at the cwd
-        """
-        return self._cwd.tree()
+    def __exit__(self, type, value, traceback):
+        self._shell.cd(self._pwd)
 
 
 class StupidlySimpleShell:
     def __init__(self):
-        self.fs = FileSystem()
+        self._fs = FileSystem()
 
-        self.mkdir = self.fs.mkdir
-        self.cd = self.fs.cd
-        self.mkdir = self.fs.mkdir
-        self.rmdir = self.fs.rmdir
-        self.mv = self.fs.mv
-        self.list_dir = self.fs.list_dir
+        self._cwd = self._fs.get_INode("/")
+
+    def pwd(self) -> pathlib.Path:
+        return self._cwd.get_path()
+
+    def cd(self, path: str | pathlib.Path) -> None:
+        path = pathlib.Path(path)
+
+        if not path.root:
+            # relative path to the cwd, so prepend it to make an aboslute path
+            path = self.pwd() / path
+
+        self._cwd = self._fs.get_INode(path)
+
+    def managed_cd(self, path):
+        return ChangeDirContextManager(self, path)
+
+    def mkdir(self, path: str | pathlib.Path, parents: bool = False):
+        path = pathlib.Path(path)
+        if not path.name:
+            raise InvalidPathError(path)
+
+        if not path.root:
+            path = self.pwd() / path
+
+        if not parents:
+            try:
+                parent = self._fs.get_INode(path.parent)
+            except NoSuchChildINodeError:
+                msg = f"No such directory: {path.parent}"
+                raise InvalidPathError(msg) from None
+
+            try:
+                INode(path.name, parent=parent)
+            except ChildINodeAlreayExistsError:
+                msg = f"Directory already exists: {path}"
+                raise InvalidPathError(msg) from None
+
+        else:
+            self._fs.get_INode(path, create_non_existing=True)
+
+    def mv(
+        self,
+        source_path: str | pathlib.Path,
+        target_path: str | pathlib.Path
+    ) -> None:
+        source_path = pathlib.Path(source_path)
+        target_path = pathlib.Path(target_path)
+
+        if not source_path.root:
+            source_path = self.pwd() / source_path
+
+        if not target_path.root:
+            target_path = self.pwd() / target_path
+
+        self._fs.move_INode(source_path, target_path)
+
+    def touch(
+        self, path: str | pathlib.Path, file_type=FileObject
+    ) -> FileObject:
+        path = pathlib.Path(path)
+        target, filename = path.parent, path.name
+
+        if not filename:
+            raise InvalidPathError(path)
+
+        if not target.root:
+            target = self.pwd() / target
+
+        file = file_type(name=filename)
+
+        self._fs.get_INode(target).add_file(file)
+
+        return file
+
+    def get_file(self, path: str | pathlib.Path) -> FileObject:
+        path = pathlib.Path(path)
+        if not path.root:
+            path = self.pwd() / path
+
+        return self._fs.get_fileobject(path)
+
+    def rm(self,
+           path: str | pathlib.Path,
+           recursive: bool = False) -> INode | FileObject:
+        path = pathlib.Path(path)
+        if not path.root:
+            path = self.pwd() / path
+
+        err = InvalidPathError(f"No such FileObject or INode: {path}")
+        target, name = path.parent, path.name
+
+        if not name:
+            raise err
+
+        try:
+            node = self._fs.get_INode(target)
+        except NoSuchChildINodeError:
+            raise err from None
+
+        try:
+            node = node.remove_file(name)
+
+        except NoSuchFileObject:
+            if recursive:
+                try:
+                    node = node.remove_child(name)
+                except NoSuchChildINodeError:
+                    raise err from None
+
+            else:
+                if name in node.children:
+                    msg = f"{path} is a directory. Use recursive=True"
+                    err = InvalidPathError(msg)
+
+                raise err from None
+
+        return node
+
+    def add_file_watcher(self, path, callback):
+        path = pathlib.Path(path)
+        if not path.root:
+            path = self.pwd() / path
+
+        x = self.get_file(path)
+        x.DataChanged.connect(lambda: callback(path))
