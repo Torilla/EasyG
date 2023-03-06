@@ -22,7 +22,7 @@ class ChildINodeAlreayExistsError(FileSystemError):
 
 class NoSuchChildINodeError(FileSystemError):
 
-    """Raise when trying to access an INode that does not exist"""
+    """Raised when trying to access an INode that does not exist"""
 
 
 class INodeChildSet:
@@ -153,11 +153,15 @@ class INodeChildSet:
 
 
 class FileObjectAlreadyExistsError(FileSystemError):
-    pass
+
+    """Raised when trying to add a FileObject to an INode with a name that
+    is already registered as file object.
+    """
 
 
-class NoSuchFileObject(FileSystemError):
-    pass
+class NoSuchFileObjectError(FileSystemError):
+
+    """Raised when trying to access a FileObject that does not exists"""
 
 
 class FileObjectSet:
@@ -181,7 +185,7 @@ class FileObjectSet:
         return iter(self._members)
 
     def __contains__(self, name: str | FileObject) -> bool:
-        """Determins wether a FileObject with name equal to the given name exists
+        """Determins if a FileObject with name equal to the given name exists
 
         Args:
             name (str | FileObject): The name or the FileObject with the same
@@ -242,8 +246,8 @@ class FileObjectSet:
             FileObject: The FileObject with name equal to the given name
 
         Raises:
-            NoSuchFileObject: If no FileObject with name equal to the given name
-                is present
+            NoSuchFileObjectError: If no FileObject with name equal to the
+                given name is present
         """
         if isinstance(name, FileObject):
             name = name.name
@@ -252,7 +256,7 @@ class FileObjectSet:
             if member.name == name:
                 break
         else:
-            raise NoSuchFileObject(name)
+            raise NoSuchFileObjectError(name)
 
         return member
 
@@ -267,7 +271,7 @@ class FileObjectSet:
             FileObject: The removed member
 
         Raises:
-            NoSuchFileObject: If no FileObject with the given name exists
+            NoSuchFileObjectError: If no FileObject with the given name exists
         """
         if isinstance(name, FileObject):
             name = name.name
@@ -278,7 +282,7 @@ class FileObjectSet:
                 break
 
         else:
-            raise NoSuchFileObject(name)
+            raise NoSuchFileObjectError(name)
 
         return member
 
@@ -301,7 +305,7 @@ class FileObject(QtCore.QObject):
         """
         super().__init__(*args, **kwargs)
         self.name = name
-        self.set_data(data)
+        self._data = data
 
     def data(self) -> Any:
         return self._data
@@ -311,18 +315,27 @@ class FileObject(QtCore.QObject):
         self.DataChanged.emit()
 
 
-PointList2D: namedtuple[list, list] = namedtuple("PointList2D", ("x", "y"))
+PointList2D: namedtuple[list[float], list[float]] = namedtuple("PointList2D",
+                                                               ("x", "y"))
 
 
 class PointListFileObject(FileObject):
     def __init__(self, name):
         super().__init__(name=name, data=PointList2D([], []))
 
-    def appendPoint(self, data: list[float]) -> None:
+    def set_data(self, *args, **kwargs):
+        raise NotImplementedError("Can not set data directly.")
+
+    def appendPoint(self, data: tuple[float, float]) -> None:
         x, y = data
         self._data.x.append(x)
         self._data.y.append(y)
         self.DataChanged.emit()
+
+    def extendPoints(self, data: tuple[list[float], list[float]]) -> None:
+        x, y = data
+        self._data.x.extend(x)
+        self._data.y.extend(y)
 
 
 class INode:
@@ -619,9 +632,20 @@ class StupidlySimpleShell:
         self._cwd = self._fs.get_INode("/")
 
     def pwd(self) -> pathlib.Path:
+        """Return the current working directory as pathlib.Path instance
+
+        Returns:
+            pathlib.Path: The current working directory
+        """
         return self._cwd.get_path()
 
     def cd(self, path: str | pathlib.Path) -> None:
+        """Change the current working directory to path. All subsequent
+        FileSystem operations will be relative to this directory.
+
+        Args:
+            path (str | pathlib.Path): The path to change to.
+        """
         path = pathlib.Path(path)
 
         if not path.root:
@@ -630,10 +654,35 @@ class StupidlySimpleShell:
 
         self._cwd = self._fs.get_INode(path)
 
-    def managed_cd(self, path):
+    def managed_cd(self, path: str | pathlib.Path) -> ChangeDirContextManager:
+        """Create a context manager that changes the current working directory
+        to path and return to the previous working directory on exit.
+
+        Args:
+            path (str | pathlib.Path): The path to change to when entering the
+                context manager
+
+        Returns:
+            ChangeDirContextManager: The context manager that manages the
+                change dir.
+        """
         return ChangeDirContextManager(self, path)
 
-    def mkdir(self, path: str | pathlib.Path, parents: bool = False):
+    def mkdir(self, path: str | pathlib.Path, parents: bool = False) -> None:
+        """Create a new directory at path. If parents is true all non-existing
+        directories in path will also be created.
+
+        Args:
+            path (str | pathlib.Path): The path to the directory which should
+                be created
+            parents (bool, optional): Create non-existing directories in path
+                on the fly if true, else raise an InvalidPathError if any
+                directories in path do not exist.
+
+        Raises:
+            InvalidPathError: When parents is false and any of the directories
+                in path do not exist.
+        """
         path = pathlib.Path(path)
         if not path.name:
             raise InvalidPathError(path)
@@ -662,6 +711,17 @@ class StupidlySimpleShell:
         source_path: str | pathlib.Path,
         target_path: str | pathlib.Path
     ) -> None:
+        """Move the directory in source_path to the directory specified in
+        target_path. If the last directory in target_path does not exist, but
+        the second to last does, the source_path directory gets renamed to the
+        name of the last directory in target_path before it is moved. This is
+        the same behaviour as the bash mv command.
+
+        Args:
+            source_path (str | pathlib.Path): The path to the directory to move
+            target_path (str | pathlib.Path): The path to the directory which
+                to move the source directory to
+        """
         source_path = pathlib.Path(source_path)
         target_path = pathlib.Path(target_path)
 
@@ -676,6 +736,13 @@ class StupidlySimpleShell:
     def touch(
         self, path: str | pathlib.Path, file_type=FileObject
     ) -> FileObject:
+        """Create a new file_type instance at path. the name of the file
+        will be the last directory in path.
+
+        Args:
+            path (str | pathlib.Path): The path with the name of the file
+            file_type (TYPE, optional): The type of file that should be created
+        """
         path = pathlib.Path(path)
         target, filename = path.parent, path.name
 
@@ -691,7 +758,31 @@ class StupidlySimpleShell:
 
         return file
 
+    def add_file(
+        self, file: FileObject, path: str | pathlib.Path = "."
+    ) -> None:
+        """Add an existing FileObject to the directory in path
+
+        Args:
+            file (FileObject): The FileObject to add
+            path (str | pathlib.Path, optional): The path to the directory
+                where to add the file. The current working directory by default
+        """
+        path = pathlib.Path(path)
+        if not path.root:
+            path = self.pwd() / path
+
+        self._fs.get_INode(path).add_file(file)
+
     def get_file(self, path: str | pathlib.Path) -> FileObject:
+        """Return a FileObject instance stored at path.
+
+        Args:
+            path (str | pathlib.Path): The path where the FileObject is stored.
+
+        Returns:
+            FileObject: The requested FileObject
+        """
         path = pathlib.Path(path)
         if not path.root:
             path = self.pwd() / path
@@ -701,6 +792,22 @@ class StupidlySimpleShell:
     def rm(self,
            path: str | pathlib.Path,
            recursive: bool = False) -> INode | FileObject:
+        """Remove a file or directory from the filesystem.
+
+        Args:
+            path (str | pathlib.Path): The path to the directory or file which
+                to remove
+            recursive (bool, optional): If true, directories will be removed,
+                otherwise only files can be remove and trying to remove a
+                directory will raise and InvalidPathError
+
+        Returns:
+            INode | FileObject: The removed file or INode
+
+        Raises:
+            InvalidPathError: When recursive is false and trying to remove
+                a directory instead of a file.
+        """
         path = pathlib.Path(path)
         if not path.root:
             path = self.pwd() / path
@@ -719,7 +826,7 @@ class StupidlySimpleShell:
         try:
             node = node.remove_file(name)
 
-        except NoSuchFileObject:
+        except NoSuchFileObjectError:
             if recursive:
                 try:
                     node = node.remove_child(name)
@@ -736,9 +843,17 @@ class StupidlySimpleShell:
         return node
 
     def add_file_watcher(self, path, callback):
+        """Register a callback that will be triggered whenever the data
+        stored in path changes. The callback will receive the path to the
+        dataobject that has changed.
+
+        Args:
+            path (TYPE): The path to the dataobject to monitor
+            callback (TYPE): The callback to invoke when the data in path has
+                changed.
+        """
         path = pathlib.Path(path)
         if not path.root:
             path = self.pwd() / path
 
-        x = self.get_file(path)
-        x.DataChanged.connect(lambda: callback(path))
+        self.get_file(path).DataChanged.connect(lambda: callback(path))
