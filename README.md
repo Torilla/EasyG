@@ -1,5 +1,5 @@
 # EasyG -- Stream, Visualize and Process ECG Signal and Numerical Data
-![alt text](https://github.com/Torilla/EasyG/blob/main/ressources/EasyG_example.png?raw=true)
+![alt text](https://github.com/Torilla/EasyG/blob/dev/resources/EasyG_example.png?raw=true)
 
 ## Built using
 - Python >= 3.8

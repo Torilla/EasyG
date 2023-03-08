@@ -336,6 +336,7 @@ class PointListFileObject(FileObject):
         x, y = data
         self._data.x.extend(x)
         self._data.y.extend(y)
+        self.DataChanged.emit()
 
 
 class INode:

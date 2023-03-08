@@ -27,7 +27,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.openMenu.addAction(self.openFileAction)
 
             self.openExampleAction = QtWidgets.QAction("&Example")
-            self.openExampleAction.triggered.connect(self.OpenExampleRequest.emit)
+            self.openExampleAction.triggered.connect(
+                self.OpenExampleRequest.emit)
             self.openMenu.addAction(self.openExampleAction)
 
             self.fileMenu.addSeparator()
@@ -55,6 +56,3 @@ class MainWindow(QtWidgets.QMainWindow):
         menuBar = self.menuBar()
         fileMenu()
         serverMenu()
-
-    def updateTabDockWidgetConfigs(self, config):
-        self.tabManager.updateDockWidgetConfig(config)

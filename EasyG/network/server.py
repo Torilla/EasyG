@@ -1,21 +1,24 @@
-from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
+from PyQt5 import QtCore
+from PyQt5 import QtNetwork
 
-from EasyG.network.tcp import EasyGTCPServer, EasyGTCPSocket
-from EasyG.network.client import EasyGTCPClient
-from EasyG.network.client import EasyGServerSideAuthentication
+from EasyG.network import tcp, client
+from EasyG import defaults
 
 
-class EasyGAuthenticationServer(QObject):
-    NewClientAvailable = pyqtSignal(EasyGTCPClient)
-    AuthenticationFailed = pyqtSignal(EasyGTCPClient)
+class EasyGAuthenticationServer(QtCore.QObject):
+    NewClientAvailable = QtCore.pyqtSignal(client.EasyGTCPClient)
+    AuthenticationFailed = QtCore.pyqtSignal(client.EasyGTCPClient)
 
-    AcceptError = pyqtSignal(EasyGTCPSocket.SocketError)
+    AcceptError = QtCore.pyqtSignal(tcp.EasyGTCPSocket.SocketError)
 
-    def __init__(self, hostAddress, hostPort,
-                 server=EasyGTCPServer(),
-                 clientType=EasyGTCPClient,
-                 authenticationProtocol=EasyGServerSideAuthentication(),
-                 *args, **kwargs):
+    def __init__(
+        self, hostAddress: QtNetwork.QHostAddress, hostPort: int,
+        server: tcp.EasyGTCPServer = tcp.EasyGTCPServer(),
+        client_type: type[client.EasyGTCPClient] = client.EasyGTCPClient,
+        authentication_protocol: client.EasyGServerSideAuthentication =
+        client.EasyGServerSideAuthentication(),
+        *args, **kwargs
+    ):
         super().__init__(*args, **kwargs)
 
         self.hostAddress = hostAddress
@@ -24,49 +27,77 @@ class EasyGAuthenticationServer(QObject):
         self.server = server
         self.server.setParent(self)
         self.server.acceptError.connect(self.AcceptError)
+        # populated with newConnection connection when server starts listening
+        self._server_connection = None
 
-        self.clientType = clientType
+        self.client_type = client_type
 
-        self.authenticationProtocol = authenticationProtocol
-        self.authenticationProtocol.setParent(self)
+        self.authentication_protocol = authentication_protocol
+        self.authentication_protocol.setParent(self)
 
-    @pyqtSlot()
-    def onNewConnection(self):
+    def set_max_pending_connections(self, n: int):
+        self.server.setMaxPendingConnections(n)
+
+    @QtCore.pyqtSlot()
+    def on_new_connection(self):
         def _disconnectSignals():
-            self.authenticationProtocol.authSuccess.disconnect(conS)
-            self.authenticationProtocol.authFailed.disconnect(conF)
+            self.authentication_protocol.authSuccess.disconnect(conS)
+            self.authentication_protocol.authFailed.disconnect(conF)
 
-        @pyqtSlot(str)
-        def emitClient(clientID):
+        @QtCore.pyqtSlot(str)
+        def emit_client(clientID):
             _disconnectSignals()
-            client = self.clientType(socket=socket, clientID=clientID,
-                                     parent=self)
+            client = self.client_type(socket=socket, clientID=clientID,
+                                      parent=self)
             self.NewClientAvailable.emit(client)
 
-        @pyqtSlot(int)
-        def failClient(errCode):
+        @QtCore.pyqtSlot(int)
+        def fail_client(errCode):
             _disconnectSignals()
-            client = self.clientType(socket=socket, parent=self)
+            client = self.client_type(socket=socket, parent=self)
             self.AuthenticationFailed.emit(client)
 
         socket = self.server.nextPendingConnection()
 
-        conS = self.authenticationProtocol.authSuccess.connect(
-            emitClient)
-        conF = self.authenticationProtocol.authFailed.connect(
-            failClient)
+        conS = self.authentication_protocol.authSuccess.connect(
+            emit_client)
+        conF = self.authentication_protocol.authFailed.connect(
+            fail_client)
 
-        self.authenticationProtocol.authenticate(socket=socket)
+        self.authentication_protocol.authenticate(socket=socket)
 
-    def startListening(self):
-        con = self.server.newConnection.connect(self.onNewConnection)
+    def start_listening(self):
+        if self._server_connection is None:
+            self._server_connection = self.server.newConnection.connect(
+                self.on_new_connection)
 
-        if not self.server.listen(self.hostAddress, self.hostPort):
-            self.server.newConnection.disconnect(con)
-            raise OSError(self.server.errorString())
+            if not self.server.listen(self.hostAddress, self.hostPort):
+                self.server.newConnection.disconnect(self._server_connection)
+                raise OSError(self.server.errorString())
+
+    def is_listening(self):
+        return self.server.isListening()
 
     def close(self):
-        self.server.close()
+        if self._server_connection is not None:
+            self.server.newConnection.disconnect(self._server_connection)
+            self._server_connection = None
+            self.server.close()
 
-    def getAddress(self):
-        return f"{self.hostAddress.toString()}:{self.hostPort}"
+    @classmethod
+    def from_config(cls, config: dict = defaults.Config["Server"]):
+        address = QtNetwork.QHostAddress(config["HostAddress"])
+        port = config["HostPort"]
+        maxPending = config["maxPendingConnections"]
+
+        server = cls(address, port)
+        server.set_max_pending_connections(maxPending)
+
+        return server
+
+    def configuration(self):
+        return {
+            "HostAddress": self.hostAddress.toString(),
+            "HostPort": self.hostPort,
+            "maxPendingConnections": self.server.maxPendingConnections()
+        }

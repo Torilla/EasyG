@@ -7,12 +7,40 @@ from .splitter import GridSplitterWidget
 
 
 class EasyGPlotWidget(pg.PlotWidget):
+
+    """class EasyGPlotWidget
+
+    class Extending the functionality of the original pyqtgraph.PlotWidget
+
+    Attributes:
+        NewROICoordinates (QtCore.pyqtSignal[float, float]): Signal emitted
+            when the user draws a RegionOfInteres on the Screen. It provides
+            the x0, x1 (so the length) coordinates of the ROI.
+        plotItem (pyqtgraph.PlotItem): See pyqtgraph.PlotWidget documentaiton
+        TitleChangeRequest (QtCore.pyqtSignal[float, float]): Description
+        titleLabelContextMenu (QtWidgets.QMenu): A QMenu instance used when
+            the user wants to change the Titel of the PlotWidget
+        titleLabelEditTextAction (QtWidgets.QAction): The action executed when
+            a titelLabelContextMenu is executed
+    """
+
     # self
     TitleChangeRequest = QtCore.pyqtSignal(object)
     # x0, x1 coordinates of self._ROI
     NewROICoordinates = QtCore.pyqtSignal(float, float)
 
-    def __init__(self, parent=None, background='default', plotItem=None, **kargs):
+    def __init__(self,
+                 parent: QtCore.QObject | None = None,
+                 background: str = 'default',
+                 plotItem: pg.PlotItem | None = None,
+                 **kargs):
+        """Initalize a new EasyGPlotWidget isntance. The method is directly
+        taken from the original pyqtgraph.PlotWidget source as we need to
+        modify its behavior without resorting to super().__init__ (see below)
+
+        Args:
+            see pyqtgraph.PlotWidget documentation
+        """
         # ----------------------------------------------------------------------
         # canno't use super().__init__ to call the baseclass init because
         # it conflicts with QObject init. We have to call the code ourself.
@@ -20,7 +48,8 @@ class EasyGPlotWidget(pg.PlotWidget):
         # https://pyqtgraph.readthedocs.io/en/latest/_modules/pyqtgraph/widgets/PlotWidget.html
         # ----------------------------------------------------------------------
         pg.GraphicsView.__init__(self, parent, background=background)
-        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,
+                           QtWidgets.QSizePolicy.Policy.Expanding)
         self.enableMouse(False)
         if plotItem is None:
             self.plotItem = pg.PlotItem(**kargs)
@@ -28,10 +57,11 @@ class EasyGPlotWidget(pg.PlotWidget):
             self.plotItem = plotItem
         self.setCentralItem(self.plotItem)
         # Explicitly wrap methods from plotItem
-        for m in ['addItem', 'removeItem', 'autoRange', 'clear', 'setAxisItems', 'setXRange',
-                  'setYRange', 'setRange', 'setAspectLocked', 'setMouseEnabled',
-                  'setXLink', 'setYLink', 'enableAutoRange', 'disableAutoRange',
-                  'setLimits', 'register', 'unregister', 'viewRect']:
+        for m in ['addItem', 'removeItem', 'autoRange', 'clear',
+                  'setAxisItems', 'setXRange', 'setYRange', 'setRange',
+                  'setAspectLocked', 'setMouseEnabled', 'setXLink', 'setYLink',
+                  'enableAutoRange', 'disableAutoRange', 'setLimits',
+                  'register', 'unregister', 'viewRect']:
             setattr(self, m, getattr(self.plotItem, m))
         self.plotItem.sigRangeChanged.connect(self.viewRangeChanged)
         # -----------------------END OF ORIGINAL INIT---------------------------
@@ -57,20 +87,20 @@ class EasyGPlotWidget(pg.PlotWidget):
         # right click events
         self.plotItem.titleLabel.contextMenuEvent = self._showTitleContextMenu
 
-    def _showTitleContextMenu(self, event):
+    def _showTitleContextMenu(self, event: QtGui.QMouseEvent) -> None:
         event.accept()
         action = self.titleLabelContextMenu.exec(QtGui.QCursor.pos())
 
         if action == self.titleLabelEditTextAction:
             self.TitleChangeRequest.emit(self)
 
-    def getTitle(self):
+    def getTitle(self) -> str:
         return self.plotItem.titleLabel.text
 
-    def setTitle(self, title):
+    def setTitle(self, title: str) -> None:
         self.plotItem.setTitle(title)
 
-    def mouseDoubleClickEvent(self, event):
+    def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:
         event.accept()
 
         self._ROI.setSize((0, 0))
@@ -82,11 +112,11 @@ class EasyGPlotWidget(pg.PlotWidget):
         self._ROI.show()
 
     @QtCore.pyqtSlot(object)
-    def _setROISize(self, pos):
+    def _setROISize(self, pos: QtCore.QPointF) -> None:
         pos = self.getViewBox().mapSceneToView(pos)
         self._ROI.setSize(pos - self._ROI.pos())
 
-    def mouseReleaseEvent(self, event):
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
         if self._setROISizeConnection is not None:
             event.accept()
             self.scene().sigMouseMoved.disconnect(self._setROISizeConnection)
@@ -95,15 +125,15 @@ class EasyGPlotWidget(pg.PlotWidget):
         else:
             super().mouseReleaseEvent(event)
 
-    def mousePressEvent(self, event):
-        if event.button() == QtCore.Qt.RightButton and self._ROI.isVisible():
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == Qt.RightButton and self._ROI.isVisible():
             event.accept()
             self._ROI.hide()
 
         else:
             super().mousePressEvent(event)
 
-    def emitROICoordinates(self):
+    def emitROICoordinates(self) -> None:
         x0 = self._ROI.pos().x()
         x1 = x0 + self._ROI.size().x()
 
@@ -115,8 +145,6 @@ class PlotManagerWidget(QtWidgets.QWidget):
 
     # previous, newtitle
     TitleChanged = QtCore.pyqtSignal(str, str)
-
-    PlotConfigOutdated = QtCore.pyqtSignal()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -134,20 +162,19 @@ class PlotManagerWidget(QtWidgets.QWidget):
         self.splitterWidget.WidgetRemoveRequest.connect(
             self._onWidgetRemoveRequest)
 
-    def _onColumnInsertRequest(self, columnIdx):
+    def _onColumnInsertRequest(self, columnIdx: int) -> None:
         self.insertColumn(columnIdx)
         self.insertPlotWidget(columnIdx, 0)
-        self.PlotConfigOutdated.emit()
 
-    def _onWidgetInsertRequest(self, columnIdx, rowIdx):
+    def _onWidgetInsertRequest(self, columnIdx: int, rowIdx: int) -> None:
         self.insertPlotWidget(columnIdx, rowIdx)
-        self.PlotConfigOutdated.emit()
 
-    def _onWidgetRemoveRequest(self, columnIdx, rowIdx):
+    def _onWidgetRemoveRequest(self, columnIdx: int, rowIdx: int) -> None:
         self.removePlotWidget(columnIdx, rowIdx)
-        self.PlotConfigOutdated.emit()
 
-    def _onTitleChangeRequest(self, widget, defaultTitle="Plot"):
+    def _onTitleChangeRequest(
+        self, widget: EasyGPlotWidget, defaultTitle: str = "Plot"
+    ) -> None:
         oldTitle = widget.getTitle()
         newTitle, isValid = QtWidgets.QInputDialog.getText(self,
                                                            "Edit plot title",
@@ -159,26 +186,21 @@ class PlotManagerWidget(QtWidgets.QWidget):
 
             self.TitleChanged.emit(oldTitle, newTitle)
 
-    def insertColumn(self, columnIdx):
+    def insertColumn(self, columnIdx: int) -> None:
         self.splitterWidget.insertColumn(columnIdx)
 
-    def insertPlotWidget(self, columnIdx, rowIdx, *args, **kwargs):
+    def insertPlotWidget(
+        self, columnIdx: int, rowIdx: int, *args, **kwargs
+    ) -> None:
         widget = self.plotWidgetType(*args, **kwargs)
         widget.TitleChangeRequest.connect(self._onTitleChangeRequest)
         self.splitterWidget.insertWidget(columnIdx, rowIdx, widget)
 
-    def removePlotWidget(self, columnIdx, rowIdx):
+    def removePlotWidget(self, columnIdx: int, rowIdx: int) -> None:
         self.splitterWidget.removeWidget(columnIdx, rowIdx)
 
-    def addItemToPlot(self, columnIdx, rowIdx, item, *args, **kwargs):
-        self.splitterWidget.widget(columnIdx, rowIdx).addItem(item, *args, **kwargs)
-
-    def getCurrentPlotConfiguration(self):
-        config = {}
-
-        for colIdx in range(self.splitterWidget.columnCount()):
-            for rowIdx in range(self.splitterWidget.rowCountOfColumn(colIdx)):
-                w = self.splitterWidget.widget(colIdx, rowIdx)
-                config[w.getTitle()] = [i.name() for i in w.listDataItems()]
-
-        return config
+    def addItemToPlot(
+        self, columnIdx: int, rowIdx: int, item: pg.PlotItem, *args, **kwargs
+    ) -> None:
+        self.splitterWidget.widget(columnIdx, rowIdx).addItem(item, *args,
+                                                              **kwargs)

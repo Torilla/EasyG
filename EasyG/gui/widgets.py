@@ -1,102 +1,44 @@
-from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtCore import Qt
+from PyQt5 import QtWidgets, QtGui, QtCore
 
 
-class PlotDataListItem(QtWidgets.QWidget):
-    def __init__(self, text, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class ServerConfigurationWidget(QtWidgets.QGroupBox):
+    def __init__(self, HostAddress, HostPort, maxPendingConnections,
+                 title="Server Configuration", *args, **kwargs):
+        super().__init__(title, *args, **kwargs)
 
-        layout = QtWidgets.QHBoxLayout()
+        layout = QtWidgets.QFormLayout()
         self.setLayout(layout)
 
-        self.checkBox = QtWidgets.QCheckBox()
-        layout.addWidget(self.checkBox)
+        self.ip_edit = QtWidgets.QLineEdit()
+        self.ip_edit.setToolTip("The IP the server is listening at.")
+        self.ip_edit.setText(HostAddress)
+        layout.addRow("IP Adress:", self.ip_edit)
 
-        self.label = QtWidgets.QLabel(f"&{text}")
-        layout.addWidget(self.label)
-        self.label.setBuddy(self.checkBox)
+        self.port_edit = QtWidgets.QLineEdit()
+        self.port_edit.setText(str(HostPort))
+        self.port_edit.setToolTip("The port the server will be using.")
+        self.port_edit.setValidator(QtGui.QIntValidator(1, 5))
+        layout.addRow("Port:", self.port_edit)
 
-    def text(self):
-        return self.label.text()
+        self.maxpending_edit = QtWidgets.QLineEdit()
+        self.maxpending_edit.setText(str(maxPendingConnections))
+        self.maxpending_edit.setToolTip("Maximum no. of pending connections")
+        self.maxpending_edit.setValidator(QtGui.QIntValidator(1, 1000))
+        layout.addRow("Maximum number of pending connections:",
+                      self.maxpending_edit)
 
+        self.ok_button = QtWidgets.QDialogButtonBox(self)
+        self.ok_button.setGeometry(QtCore.QRect(50, 240, 341, 32))
+        self.ok_button.setOrientation(QtCore.Qt.Horizontal)
+        self.ok_button.setStandardButtons(
+            QtWidgets.QDialogButtonBox.Cancel | QtWidgets.QDialogButtonBox.Ok)
+        self.ok_button.clicked.connect(self.accept)
+        self.ok_button.rejected.connect(self.reject)
+        layout.addWidget(self.ok_button)
 
-class CollapsibleDataList(QtWidgets.QWidget):
-    def __init__(self, plotItemTitle, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        layout = QtWidgets.QVBoxLayout()
-        self.setLayout(layout)
-
-        self.toggleButton = QtWidgets.QToolButton(text=plotItemTitle,
-                                                  checkable=True,
-                                                  checked=False)
-        self.toggleButton.setStyleSheet("QToolButton { border: none; }")
-        self.toggleButton.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.toggleButton.setArrowType(Qt.DownArrow)
-        self.toggleButton.pressed.connect(self.onToggleButtonPressed)
-        layout.addWidget(self.toggleButton)
-
-        self.contentLayout = QtWidgets.QVBoxLayout()
-        layout.addLayout(self.contentLayout)
-
-        layout.addStretch()
-
-    @QtCore.pyqtSlot()
-    def onToggleButtonPressed(self):
-        checked = self.toggleButton.isChecked()
-        self.toggleButton.setArrowType(Qt.DownArrow
-                                       if not checked
-                                       else Qt.RightArrow)
-        for i in range(self.contentLayout.count()):
-            item = self.contentLayout.itemAt(i).widget()
-            item.show() if not checked else item.hide()
-
-    def addItem(self, item):
-        item = PlotDataListItem(item)
-        self.contentLayout.addWidget(item)
-
-    def listItemNames(self):
-        return [self.contentLayout.widget(i).text()
-                for i in range(self.contentLayout.count())]
-
-
-class PlotDataItemAndPlotterListWidget(QtWidgets.QDockWidget):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self._contentLayout = QtWidgets.QVBoxLayout()
-        self._contentLayout.addStretch()
-        contentWidget = QtWidgets.QWidget()
-        contentWidget.setLayout(self._contentLayout)
-        self.setWidget(contentWidget)
-
-    def _iterBoxes(self):
-        # last 'widget' is stretch, so omit it
-        return (self._contentLayout.itemAt(i).widget()
-                for i in range(self._contentLayout.count() - 1))
-
-    def clear(self):
-        for idx in range(self._contentLayout.count() - 1):
-            w = self._contentLayout.takeAt(idx).widget()
-            w.setParent(None)
-
-    def addBox(self, boxTitle, boxContent):
-        box = CollapsibleDataList(boxTitle)
-        for item in boxContent:
-            box.addItem(item)
-
-        self._contentLayout.insertWidget(self._contentLayout.count() - 1, box)
-
-    def updateBoxTitle(self, oldTitle, newTitle):
-        for box in self._iterBoxes():
-            if box.toggleButton.text() == oldTitle:
-                box.toggleButton.setText(newTitle)
-
-    def setConfiguration(self, ownedItems, forreignItems):
-        self.clear()
-        for plot, items in ownedItems.items():
-            self.addBox(plot, items)
-
-        if forreignItems:
-            self.addBox("Other Tabs", forreignItems)
-
+    def get_configuration(self):
+        return {
+            "HostIP": self.ip_edit.text(),
+            "HostPort": int(self.port_edit.text()),
+            "maxPendingConnections": int(self.maxpending_edit.text())
+        }

@@ -2,10 +2,15 @@
 
 Examples:
   builtin:
-    resources:
-      examples:
+    files:
+      EasyG.resources.examples:
         - "*.csv"
     modules:
-      EasyG.ecg.exampledata: getSciPyExample
-  files: []
-  modules: {}
+      EasyG.ecg.exampledata:
+        SciPy_ECG: getSciPyExample
+
+Server:
+  HostAddress: "127.0.0.1"
+  HostPort: 4444
+  maxPendingConnections: 10
+

@@ -1,4 +1,4 @@
-from importlib import resources
+import importlib
 import csv
 from scipy.misc import electrocardiogram
 import numpy as np
@@ -9,20 +9,22 @@ from EasyG import defaults
 
 
 def discover_examples():
+    # get builtin examples
+    cfg = defaults.Config["Examples"]["builtin"]
     examples = {}
 
-    # get builtin examples:
-    cfg = defaults.Config["Examples"]["builtin"]
+    for path, file_patterns in cfg["files"].items():
+        for file_pattern in file_patterns:
+            with importlib.resources.path(path, file_pattern) as path:
+                examples["files"] = list(path.parent.glob(path.name))
 
-    # get file examples
-    for rname, rpatterns in cfg["resources"]:
-        path = resources.as_file(f"EasyG.resources.{rname}")
-        for pattern in rpatterns:
-            examples.extend(list(path.glob(pattern)))
+    methdict = examples["methods"] = {}
+    for module, methods in cfg["modules"].items():
+        module = importlib.import_module(module)
+        for name, method in methods.items():
+            methdict[name.replace("_", " ")] = getattr(module, method)
 
-    #
-
-    return
+    return examples
 
 
 def getSciPyExample():
@@ -39,30 +41,33 @@ def load_csv_example(fn, sampleRateHz=250):
     with open(fn) as f:
         for line in csv.reader(f):
             assert len(line) == 1
-            y.extend(line)
+            y.append(float(line[0]))
 
             # we want milliseconds, so multiply Hz (1/s) by 1000
             x.append(1000 / sampleRateHz * len(y))
-
-    y = [float(_y) for _y in y]
 
     return x, y
 
 
 def openExample():
-    if not DynamicExamples:
-        discover_examples()
+    methods, files = Examples["methods"], Examples["files"]
 
     exampleName, valid = QInputDialog.getItem(
         None, "Select Example Type", "List of Example Types",
-        list(DynamicExamples) + list(BuiltinExamples), 0, False)
+        list(methods) + [f.name for f in files], 0, False
+    )
 
     if valid:
-        if exampleName in BuiltinExamples:
-            x, y = BuiltinExamples[exampleName]()
+        if exampleName in methods:
+            x, y = methods[exampleName]()
 
         else:
-            x, y = load_csv_example(DynamicExamples[exampleName])
+            for f in files:
+                if f.name == exampleName:
+                    x, y = load_csv_example(f)
+                    break
+            else:
+                raise AssertionError(f"Example data not found!: {f}")
 
     else:
         x, y = None, None
@@ -70,5 +75,4 @@ def openExample():
     return x, y, exampleName
 
 
-DynamicExamples = {}
-BuiltinExamples = {"SciPy": getSciPyExample}
+Examples = discover_examples()

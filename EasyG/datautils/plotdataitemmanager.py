@@ -90,8 +90,6 @@ class PlotDataManager:
             shell.cd(name)
             file = filesystem.PointListFileObject(name=self.RAW_DATA_FILE)
             shell.add_file(file)
-            # notify the plotitems when data has changed
-            shell.add_file_watcher(self.RAW_DATA_FILE, self._update_plot_items)
 
             # create plotitem dir and add a plotitem to it at
             # /tabs/static_data/name/plotitems/name.plotitem
@@ -102,6 +100,11 @@ class PlotDataManager:
             plotfile = filesystem.FileObject(name=f"{name}.plotitem",
                                              data=plotitem)
             shell.add_file(plotfile)
+
+            # notify the plotitems when data has changed
+            shell.cd("..")
+            shell.add_file_watcher(self.RAW_DATA_FILE, self._update_plot_items)
+            file.extendPoints(data)
 
             # return the ploitem for further processing
             return plotitem

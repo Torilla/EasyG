@@ -4,8 +4,8 @@
 # Client databse
 *.db
 
-# Softlinks
-tests/EasyG
+# test scripts
+scripts/
 
 # sublime files
 *.sublime-workspace
