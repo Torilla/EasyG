@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Iterator, Callable
+from typing import Any, Iterator
 
 from collections import namedtuple
 import pathlib

@@ -1,57 +1,109 @@
+from __future__ import annotations
+from typing import Callable
 from enum import Enum, IntEnum
 
-from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QByteArray
-from PyQt5.QtSql import QSqlDatabase, QSqlQuery
+from PyQt5 import QtCore, QtNetwork, QtSql
 
 import bcrypt
-
-from EasyG.network.tcp import EasyGTCPSocket
 
 
 DEFAULT_DB_DRIVER = "QSQLITE"
 _DEFAULT_DB_NAME = "EasyGClients.db"
 
 
-def getPasswordHash(password):
+def getPasswordHash(password: str) -> str:
+    """Return the salted hash of password. Uses bcrypt.haspw.
+
+    Args:
+        password (str): The password to has
+
+    Returns:
+        str: The hashed password
+    """
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
-def checkPassword(password, passwordHash):
+def checkPassword(password: str, passwordHash: str) -> bool:
+    """Check if password matches the hashed password passwordHash. Uses
+    bcrypt.checkpw
+
+    Args:
+        password (str): The password to check
+        passwordHash (str): The password hash to check against.
+
+    Returns:
+        bool: True if password matches passwordHash, false otherwise
+    """
     return bcrypt.checkpw(password.encode(), passwordHash.encode())
 
 
 class EasyGDatabaseError(IOError):
-    pass
+
+    """Raised when a Database transaction fails"""
 
 
-class EasyGClientDatabase(QObject):
-    def __init__(self, dbName=_DEFAULT_DB_NAME, dbDriver=DEFAULT_DB_DRIVER,
-                 *args, **kwargs):
+class EasyGClientDatabase(QtCore.QObject):
+
+    """class EasyGClientDatabase
+
+    This class exposes an interface to register new network clients and their
+    passwords, as well as to retrieve them and check passwords against stored
+    ones.
+
+    Attributes:
+        dbDriver (str): The underlying PyQt database driver.
+        dbName (str): The filename to use for the database.
+    """
+
+    def __init__(
+        self,
+        dbName: str = _DEFAULT_DB_NAME,
+        dbDriver: str = DEFAULT_DB_DRIVER,
+        *args, **kwargs
+    ):
+        """Initialize a new EasyGClientDatabase instance.
+
+        Args:
+            dbName (str, optional): the name of the databse.
+            dbDriver (str, optional): the underlying database driver
+            *args: Forwared to QObject.__init__
+            **kwargs: Forwared to QObject.__init__
+        """
         super().__init__(*args, **kwargs)
 
         self.dbName = dbName
         self.dbDriver = dbDriver
 
-        self._db = QSqlDatabase.addDatabase(self.dbDriver)
+        self._db = QtSql.QSqlDatabase.addDatabase(self.dbDriver)
         self._db.setDatabaseName(self.dbName)
 
         self._initDb()
 
-    def __enter__(self):
+    def __enter__(self) -> EasyGClientDatabase:
+        """Start a new database transaction
+
+        Returns:
+            EasyGClientDatabase: self
+
+        Raises:
+            IOError: If it it not possible to open the databse
+        """
         if not self._db.open():
             raise IOError(f"Can not open database {self.dbName}")
 
         return self
 
     def __exit__(self, exec_type, exc_value, exc_tb):
+        """Finish a databse transaction"""
         if exec_type is None:
             self._db.commit()
 
         self._db.close()
 
     def _initDb(self):
+        """Initialize the databse with the required tables."""
         with self:
-            query = QSqlQuery()
+            query = QtSql.QSqlQuery()
             query.exec(
                 """
                 CREATE TABLE IF NOT EXISTS EasyGClients (
@@ -61,9 +113,20 @@ class EasyGClientDatabase(QObject):
                 """
             )
 
-    def _registerNewClient(self, clientID, passwordHash):
+    def _registerNewClient(self, clientID: str, passwordHash: str) -> None:
+        """Register a new client in the databse. Do not use this method
+        directly, use registerNewClient(clientID, password)
+
+        Args:
+            clientID (str): The ID of the client
+            passwordHash (str): The hashed (!) password of the client
+
+        Raises:
+            EasyGDatabaseError: If a client with this ID has already been
+                registered
+        """
         with self:
-            query = QSqlQuery()
+            query = QtSql.QSqlQuery()
             query.prepare(
                 """
                 INSERT INTO EasyGClients (
@@ -81,14 +144,39 @@ class EasyGClientDatabase(QObject):
         if query.lastError().isValid():
             raise EasyGDatabaseError(query.lastError().text())
 
-    @pyqtSlot(str, str)
-    def registerNewClient(self, clientID, password):
-        pwHash = getPasswordHash(password)
-        self._registerNewClient(clientID=clientID, passwordHash=pwHash)
+    @QtCore.pyqtSlot(str, str)
+    def registerNewClient(self, clientID: str, password: str) -> None:
+        """Register a new client with ID clientID and password to the database.
 
-    def _getClientPasswordHash(self, clientID):
+        Args:
+            clientID (str): The client ID
+            password (str): The client password
+
+        Raises:
+            EasyGDatabaseError: If a client with this ID has already been
+                registered
+        """
+        pwHash = getPasswordHash(password)
+        try:
+            self._registerNewClient(clientID=clientID, passwordHash=pwHash)
+        except EasyGDatabaseError as err:
+            raise err from None
+
+    def _getClientPasswordHash(self, clientID: str) -> str:
+        """Return the password hash belonging to client with ID equal to
+        clientID. Do not use this method directly, use checkClientPassword.
+
+        Args:
+            clientID (str): The ID of the client to query
+
+        Returns:
+            str: The password has of client
+
+        Raises:
+            EasyGDatabaseError: If no such client exists
+        """
         with self:
-            query = QSqlQuery()
+            query = QtSql.QSqlQuery()
             query.prepare(
                 """
                     SELECT passwordHash FROM EasyGClients
@@ -103,8 +191,18 @@ class EasyGClientDatabase(QObject):
 
         return query.value(0)
 
-    @pyqtSlot(str, str)
-    def checkClientPassword(self, clientID, clientPassword):
+    @QtCore.pyqtSlot(str, str)
+    def checkClientPassword(self, clientID: str, clientPassword: str) -> bool:
+        """Check if the stored password belonging to clientID matches the
+        given clientPassword.
+
+        Args:
+            clientID (str): The ID of the client
+            clientPassword (str): The password to check against client
+
+        Returns:
+            bool: True if the password matches the client, False otherwise
+        """
         try:
             pwHash = self._getClientPasswordHash(clientID)
             result = checkPassword(password=clientPassword,
@@ -116,7 +214,25 @@ class EasyGClientDatabase(QObject):
 
 
 class AuthenticationControlFlags(bytes, Enum):
+
+    """class AuthenticationControlFlags.
+    Simple Enum that stores some control flags for client authentication
+
+    Attributes:
+        EOM (bytes): End of Message
+        FAILED (int): Client Authentication Failed
+        SUCCESS (int): Client Authentication Successfull
+    """
+
     def __new__(cls, value):
+        """Initialize a new AuthenticationControlFlags class
+
+        Args:
+            value (TYPE): Description
+
+        Returns:
+            TYPE: Description
+        """
         if isinstance(value, bytes):
             obj = super().__new__(cls, value)
             obj._value_ = value
@@ -132,7 +248,15 @@ class AuthenticationControlFlags(bytes, Enum):
     SUCCESS = 0
     FAILED = 1
 
-    def __eq__(self, other):
+    def __eq__(self, other: str | bytes) -> bool:
+        """Check if other is equal to a given member of the Enum
+
+        Args:
+            other (str | bytes): What to compare to
+
+        Returns:
+            bool: True if euqality with other holds, False otherwise
+        """
         try:
             other = other.to_bytes((other.bit_length() + 7) // 8,
                                    byteorder="big")
@@ -143,25 +267,62 @@ class AuthenticationControlFlags(bytes, Enum):
 
 
 class AuthenticationErrorCodes(IntEnum):
+
+    """class AuthenticationErrorCodes
+    Simple Enum that holds Authentication Error Codes
+
+    Attributes:
+        BAD_AUTH (int): Bad authentication
+        SOCKET_ERROR (int): Socker error
+    """
+
     SOCKET_ERROR = 0
     BAD_AUTH = 1
 
 
-class EasyGAbstractAuthenticationProtocol(QObject):
+class EasyGAbstractAuthenticationProtocol(QtCore.QObject):
+
+    """class EasyGAbstractAuthenticationProtocol
+    Abstract base clas for authentication protocols
+
+    Attributes:
+        authFailed (TYPE): signal emitted when authentication failed
+        authSuccess (TYPE): signal emitted when authenticationw as succesfull
+        CLIENTDB (TYPE): The database instance holding the registered clients.
+    """
+
     CLIENTDB = EasyGClientDatabase()
 
-    authSuccess = pyqtSignal(str)
-    authFailed = pyqtSignal(int)
+    authSuccess = QtCore.pyqtSignal(str)
+    authFailed = QtCore.pyqtSignal(int)
 
     @classmethod
-    def setClientDB(cls, db):
+    def setClientDB(cls, db: EasyGClientDatabase) -> None:
+        """Set a new client databse
+
+        Args:
+            db (EasyGClientDatabase): The database instance to use
+        """
         cls.CLIENTDB = db
 
 
 class EasyGServerSideAuthentication(EasyGAbstractAuthenticationProtocol):
-    @pyqtSlot(EasyGTCPSocket)
-    def authenticate(self, socket):
-        @pyqtSlot()
+
+    """class EasyGServerSideAuthentication
+    The protocol used by the server to authenticate clients against a
+    EasyGClientDatabase instance.
+    """
+
+    @QtCore.pyqtSlot(QtNetwork.QTcpSocket)
+    def authenticate(self, socket: QtNetwork.QTcpSocket) -> None:
+        """Authenticate an incoming client against the databse. If
+        authentication was succesfull, authSuccess is emmited with the client,
+        otherwise authFailed is emitted with the error code.
+
+        Args:
+            socket (QtNetwork.QTcpSocket): The socket to authenticate
+        """
+        @QtCore.pyqtSlot()
         def readAuth():
             socket.readyRead.disconnect(con)
 
@@ -187,22 +348,42 @@ class EasyGServerSideAuthentication(EasyGAbstractAuthenticationProtocol):
 
             socket.disconnected.disconnect(conD)
 
-        @pyqtSlot()
+        @QtCore.pyqtSlot()
         def onDisconnect():
             socket.disconnected.disconnect(conD)
             socket.readyRead.disconnect(con)
             self.authFailed.emit(AuthenticationErrorCodes.SOCKET_ERROR)
 
-        con = socket.readyRead.connect(readAuth)
-        conD = socket.disconnected.connect(onDisconnect)
+        con = socket.readyRead.connect(readAuth)  # type: ignore[arg-type]
+        conD = socket.disconnected.connect(onDisconnect)  # type: ignore[arg-type]
 
 
 class EasyGClientSideAuthentication(EasyGAbstractAuthenticationProtocol):
-    authSuccess = pyqtSignal()
 
-    @pyqtSlot(EasyGTCPSocket, str, str)
-    def authenticate(self, socket, clientID, clientPassword):
-        @pyqtSlot()
+    """class EasyGClientSideAuthentication
+    This class performs the client side authentication against a an
+    EasyGAuthenticationServer instance.
+
+    Attributes:
+        authSuccess (QtCore.pyqtSignal): Emitted if we authenticated
+            successuflly
+    """
+
+    authSuccess = QtCore.pyqtSignal()
+
+    @QtCore.pyqtSlot(QtNetwork.QTcpSocket, str, str)
+    def authenticate(
+        self, socket: QtNetwork.QTcpSocket, clientID: str, clientPassword: str
+    ) -> None:
+        """Authenticate using the current conncetion to the authentication
+        server
+
+        Args:
+            socket (QtNetwork.QTcpSocket): The socket providing the connection
+            clientID (str): The client ID to use for authentication
+            clientPassword (str): The password belonging to the client
+        """
+        @QtCore.pyqtSlot()
         def waitForReply():
             socket.readyRead.disconnect(con)
 
@@ -212,13 +393,16 @@ class EasyGClientSideAuthentication(EasyGAbstractAuthenticationProtocol):
             else:
                 self.authFailed.emit(AuthenticationErrorCodes.BAD_AUTH)
 
-        con = socket.readyRead.connect(waitForReply)
+        con = socket.readyRead.connect(waitForReply)  # type: ignore[arg-type]
 
         socket.write(f"{clientID}:{clientPassword}".encode())
         socket.write(AuthenticationControlFlags.EOM)
 
 
-class EasyGAbstractClient(QObject):
+class EasyGAbstractClient(QtCore.QObject):
+
+    """Abstract class providing parser methods."""
+
     @staticmethod
     def defaultParser(data: str) -> list[str]:
         return [data]
@@ -229,38 +413,90 @@ class EasyGAbstractClient(QObject):
 
 
 class EasyGTCPClient(EasyGAbstractClient):
-    newLineOfData = pyqtSignal(list)
-    disconnected = pyqtSignal()
 
-    def __init__(self, socket, clientID=None,
-                 dataParser=EasyGAbstractClient.floatParser,
-                 *args, **kwargs):
+    """class EasyGTCPClient
+    This class exposes the Interface that is used to handle a client connection
+    on the server side.
+
+    Attributes:
+        clientID (str): The client ID to used for authentication
+        dataParser (Callable): The parser parsing raw incoming data to useful
+            version of the data for processing
+        disconnected (QtCore.pyqtSignal): Emmitted when the client disconnected
+            from the server
+        newLineOfData (TQtCore.pyqtSignal[list]): Emitted with the parsed data
+            when new data arrive
+        socket (QtNetwork.QTcpSocket): The underlying TCP socket.
+        SocketState (QtNetwork.QTcpSocker.SocketState): The current state of
+            the underlying socket.
+    """
+
+    newLineOfData = QtCore.pyqtSignal(list)
+    disconnected = QtCore.pyqtSignal()
+
+    def __init__(
+        self,
+        socket: QtNetwork.QTcpSocket,
+        clientID=None,
+        dataParser=EasyGAbstractClient.floatParser,
+        *args, **kwargs
+    ) -> None:
+        """Initalize a new EasyGTCPClient
+
+        Args:
+            socket (QtNetwork.QTcpSocket): The socket that provides the
+                connection
+            clientID (None, optional): The ID of the client
+            dataParser (TYPE, optional): The parser parsing the raw data
+            *args: Forwarted to QObject.__init__
+            **kwargs: Forwarted to QObject.__init__
+        """
         super().__init__(*args, **kwargs)
 
         self.setSocket(socket)
         self.setClientID(clientID)
         self.setDataParser(dataParser)
 
-        self._dataBuffer = QByteArray()
+        self._dataBuffer = QtCore.QByteArray()
         self._readyReadConnection = None
 
-    def setSocket(self, socket):
+    def setSocket(self, socket: QtNetwork.QTcpSocket) -> None:
+        """Set the used socket.
+
+        Args:
+            socket (QtNetwork.QTcpSocket): The socket to use
+        """
         self.socket = socket
         self.socket.setParent(self)
         self.SocketState = self.socket.SocketState
         self.socket.disconnected.connect(self.disconnected)
 
-    def setClientID(self, clientID):
+    def setClientID(self, clientID: str) -> None:
+        """Set the ID of the client
+
+        Args:
+            clientID (str): The ID to use
+        """
         self.clientID = clientID
 
-    def getClientID(self):
+    def getClientID(self) -> str | None:
+        """The ID of the client if any is set
+
+        Returns:
+            str | None: The ID if any is set
+        """
         return self.clientID
 
-    def setDataParser(self, parser):
+    def setDataParser(self, parser: Callable) -> None:
+        """Summary
+
+        Args:
+            parser (Callable): Set the method that parses raw data
+        """
         self.dataParser = parser
 
-    @pyqtSlot()
-    def _onReadyRead(self):
+    @QtCore.pyqtSlot()
+    def _onReadyRead(self) -> None:
         """
         Reads all avaible data from the socket and splits it into lines.
         Each line is parsed and and parsing result is emitted as newLineOfData.
@@ -279,24 +515,44 @@ class EasyGTCPClient(EasyGAbstractClient):
         elif idx == 0:
             self._dataBuffer.clear()
 
-    def isValid(self):
+    def isValid(self) -> bool:
+        """Return the validity of the underlying socket
+
+        Returns:
+            bool: True if the socket is valid, false otherwise
+        """
         return self.socket.isValid()
 
-    def state(self):
+    def state(self) -> QtNetwork.QTcpSocket.SocketState:
+        """Return the current state of the socket
+
+        Returns:
+            QtNetwork.QTcpSocket.SocketState: Current socket state
+        """
         return self.socket.state()
 
-    def startParsing(self):
+    def startParsing(self) -> None:
+        """Start parsing raw data and emitting the result as NewDataAvailable
+        """
         if not self._readyReadConnection:
             self._readyReadConnection = self.socket.readyRead.connect(
                 self._onReadyRead)
 
-    def stopParsing(self):
+    def stopParsing(self) -> None:
+        """Stop parsing raw data and emitting it.
+        """
         if self._readyReadConnection:
             self.socket.readyRead.disconnect(self._readyReadConnection)
 
-    def getClientAddress(self):
+    def getClientAddress(self) -> str:
+        """Return the current address in use by this spcket
+
+        Returns:
+            str: The current socket address
+        """
         return self.socket.peerAddress().toString()
 
-    def disconnectFromHost(self):
+    def disconnectFromHost(self) -> None:
+        """Sever the connection to this client."""
         self.stopParsing()
         self.socket.disconnectFromHost()

@@ -56,3 +56,6 @@ class MainWindow(QtWidgets.QMainWindow):
         menuBar = self.menuBar()
         fileMenu()
         serverMenu()
+
+    def print_status(self, message, timeout=10000):
+        self.statusBar().showMessage(message, timeout)

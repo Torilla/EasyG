@@ -1,17 +1,16 @@
-from PyQt5.QtNetwork import QHostAddress
 from PyQt5.QtCore import Qt
 
 from EasyG.datautils import plotdataitemmanager
 from EasyG.gui import mainwindow
-from EasyG.network import server
+from EasyG.network import server as _server
 from EasyG.ecg import exampledata
 from EasyG.gui import widgets
 
 
 class EasyG(object):
     def __init__(
-        self, server: server.EasyGAuthenticationServer =
-        server.EasyGAuthenticationServer.from_config()
+        self, server: _server.EasyGAuthenticationServer =
+        _server.EasyGAuthenticationServer.from_config()
     ):
         super().__init__()
 
@@ -24,7 +23,7 @@ class EasyG(object):
         self.set_server_plugin(server)
 
     def set_server_plugin(
-        self, server: server.EasyGAuthenticationServer
+        self, server: _server.EasyGAuthenticationServer
     ) -> None:
         if getattr(self, "server", None) is not None:
             self.stop_server()
@@ -48,6 +47,8 @@ class EasyG(object):
         if self.server is not None:
             self._server_config_widget = widgets.ServerConfigurationWidget(
                 **self.server.configuration())
+            self._server_config_widget.ConfigurationChanged.connect(
+                self._on_server_configuration_changed)
             self._conf_con = self.gui.configureServerAction.triggered.connect(
                 self._server_config_widget.show)
             self.gui.startServerAction.setEnabled(True)
@@ -58,13 +59,36 @@ class EasyG(object):
             self._newclient_con = self.server.NewClientAvailable.connect(
                 self._onNewServerClient)
 
+        self.gui.print_status("Updated the server configuration.")
+
+    def _on_server_configuration_changed(self):
+        config = self._server_config_widget.get_configuration()
+        server = _server.EasyGAuthenticationServer.from_config(config)
+        self.set_server_plugin(server)
+
     def start_server(self):
         if not self.server.is_listening():
-            self.gui.startServerAction.setEnabled(False)
-            self.gui.stopServerAction.setEnabled(True)
-            self.gui.configureServerAction.setEnabled(False)
+            try:
+                self.server.start_listening()
 
-            self.server.start_listening()
+            except OSError:
+                err = self.server.error_string()
+                status = f"Failed to start server: {err}"
+
+            else:
+
+                self.gui.startServerAction.setEnabled(False)
+                self.gui.stopServerAction.setEnabled(True)
+                self.gui.configureServerAction.setEnabled(False)
+                address = self.server.server_address().toString()
+                port = self.server.server_port()
+                status = f"Server listening at {address}:{port}."
+
+        else:
+            address = self.server.server_address().toString()
+            status = "Server is already listening at {address}."
+
+        self.gui.print_status(status)
 
     def stop_server(self):
         if self.server.is_listening():
@@ -72,9 +96,7 @@ class EasyG(object):
             self.gui.stopServerAction.setEnabled(False)
             self.gui.startServerAction.setEnabled(True)
             self.gui.configureServerAction.setEnabled(True)
-
-    def _on_server_config_action(self):
-        self._server_config_widget.show()
+            self.gui.print_status("Server stopped listening.")
 
     def _onNewServerClient(self, client):
         tabName = client.getClientID()
