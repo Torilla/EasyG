@@ -19,7 +19,7 @@ class ServerConfiguration(TypedDict):
         maxPendingConnections (int)
     """
 
-    HostAddress: QtNetwork.QHostAddress
+    HostAddress: str
     HostPort: int
     maxPendingConnections: int
 
@@ -193,25 +193,25 @@ class EasyGAuthenticationServer(QtCore.QObject):
         return self.server.errorString()
 
     @classmethod
-    def from_config(
-        cls, config: ServerConfiguration = defaults.Config["Server"]
+    def from_configuration(
+        cls, configuration: ServerConfiguration = defaults.Config["Server"]
     ) -> EasyGAuthenticationServer:
         """Get a new server instance from a configuration dictionary.
 
         Args:
-            config (ServerConfiguration, optional): If not provided, the
+            configuration (ServerConfiguration, optional): If not provided, the
                 default configuration set in defaults.yml will be used.
         """
-        address = QtNetwork.QHostAddress(config["HostAddress"])
-        port = config["HostPort"]
-        maxPending = config["maxPendingConnections"]
+        address = QtNetwork.QHostAddress(configuration["HostAddress"])
+        port = configuration["HostPort"]
+        maxPending = configuration["maxPendingConnections"]
 
         server = cls(address, port)
         server.set_max_pending_connections(maxPending)
 
         return server
 
-    def configuration(self) -> ServerConfiguration:
+    def get_configuration(self) -> ServerConfiguration:
         return ServerConfiguration(
             HostAddress=self.host_address.toString(),
             HostPort=self.host_port,
