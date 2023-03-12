@@ -1,0 +1,29 @@
+---
+
+PlotDataManager:
+  filesystem:
+    - name: tabs
+      children:
+        - name: static_data
+          default_filetype: PointList2DFileObject
+          children:
+            - name: plotitems
+              default_filetype: FileObject
+        - name: network_clients
+          default_filetype: PointList2DFileObject
+          children:
+            - name: plotitems
+              default_filetype: FileObject
+
+  global:
+    plotitem_dir: plotitems
+
+  static_data:
+    root: /tabs/static_data
+    default_data_filename: "{parent.name}{data_count}.dat"
+    default_plotitem_filename: "{parent.name}{plotitem_count}.plotitem"
+
+  network_clients:
+    root: /tabs/network_clients
+    default_data_filename: "{client.clientID}.dat"
+    default_plotitem_filename: "{parent.name}{plotitem_count}.plotitem"

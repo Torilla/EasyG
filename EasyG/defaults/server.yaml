@@ -1,0 +1,6 @@
+---
+
+Server:
+  HostAddress: "127.0.0.1"
+  HostPort: 4444
+  maxPendingConnections: 10
