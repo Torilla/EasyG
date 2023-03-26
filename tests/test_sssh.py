@@ -35,7 +35,10 @@ class TestFileSystemBasics(unittest.TestCase):
         self.assertEqual(self.shell.ls(), ["b"])
         self.shell.cd("..")
 
-        self.shell.rm("/a", recursive=True)
+        self.assertIs(
+            self.shell.filesystem.get_node("/a"),
+            self.shell.rm("/a", recursive=True)
+        )
         with self.assertRaises(filesystem.InvalidPathError):
             self.shell.cd("/a")
 
@@ -50,13 +53,25 @@ class TestFileSystemBasics(unittest.TestCase):
         self.assertEqual(self.shell.pwd(), pathlib.Path("/a/b/c/ d"))
         self.assertEqual(self.shell.ls(), [])
 
-#    def test_can_set_and_retrieve_data(self):
-#        data = "test"
-#        data2 = "test2"
-#        self.shell.mkdir("a", data=data)
-#        self.assertEqual(self.shell.get_data("a"), data)
-#        self.shell.set_data("a", data2)
-#        self.assertEqual(self.shell.get_data("a"), data2)
+    def test_can_move_directories(self):
+        self.shell.mkdir("a")
+        self.shell.mkdir("b")
+        self.assertEqual(self.shell.ls(), ["a", "b"])
+        self.shell.mv("a", "b")
+        self.assertEqual(self.shell.ls(), ["b"])
+        self.assertEqual(self.shell.ls("b"), ["a"])
+
+    def test_can_set_and_retrieve_data(self):
+        data = "test"
+        self.shell.touch("a")
+        self.shell.set_data("a", data)
+        self.assertEqual(self.shell.get_data("a"), data)
+
+        data2 = "test2"
+        self.shell.mkdir("b")
+        self.shell.touch("b/a")
+        self.shell.set_data("b/a", data2)
+        self.assertEqual(self.shell.get_data("b/a"), data2)
 #
 #    def test_new_node_is_empty(self):
 #        self.assertIsNone(self.shell.get_data("/"))

@@ -4,23 +4,35 @@ from importlib import resources
 
 class InvalidConfigurationFile(yaml.scanner.ScannerError):
 
-    """Raised when load a config file failes"""
+    """Raised when loading a configuration file failes"""
 
 
-Config = {}
+def parse_default_configurations():
+    Config = {}
 
-with resources.path("EasyG", "defaults") as path:
-    for file in path.rglob("*.y*ml"):
-        with open(file) as f:
-            try:
-                cfg = yaml.safe_load(f)
-            except yaml.scanner.ScannerError as err:
-                msg = f"Failed to load configuration file!\n{err}"
-                raise InvalidConfigurationFile(msg) from None
+    with resources.path("EasyG", "defaults") as path:
+        for file in path.rglob("*.y*ml"):
+            with open(file) as f:
+                errmsg = None
+                try:
+                    cfg = yaml.safe_load(f)
+                except yaml.scanner.ScannerError as err:
+                    errmsg = f"Failed to parse configuration file:\n{file}\n{err}"
 
-            if len(cfg.items()) > 1:
-                msg = f"{file}\nExpected single key, found {list(cfg.keys())}"
-                raise InvalidConfigurationFile(msg)
+                if len(cfg) > 1:
+                    errmsg = f"{file}\nExpected single key, found {list(cfg)}"
 
-            name, cfg = next(iter(cfg.items()))
-            Config[name] = cfg
+                elif not isinstance(cfg, dict):
+                    errmsg = (f"{file}:\nExpected mapping, found {type(cfg)}")
+
+                if errmsg is not None:
+                    raise InvalidConfigurationFile(errmsg)
+
+                del errmsg
+                name, cfg = next(iter(cfg.items()))
+                Config[name] = cfg
+
+    return Config
+
+
+Config = parse_default_configurations()
