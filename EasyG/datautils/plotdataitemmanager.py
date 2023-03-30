@@ -1,18 +1,30 @@
+from collections import namedtuple
 import pathlib
 
 import pyqtgraph as pg
 
-from EasyG.datautils import filesystem
+from EasyG import defaults
+from EasyG.datautils import filesystem, fsutils
 from EasyG.network import client as _client
 
 
-class DataItemAlreadyExists(Exception):
+class PlotDataManagerError(Exception):
+
+    """Raise when a PlotDataManager operation fails"""
+
+
+class DataItemAlreadyExists(PlotDataManagerError):
 
     """Raised when trying to register a data source with a name that has
     alrady been registred
     """
 
-    pass
+
+class PlotitemAlreadyExistsError(DataItemAlreadyExists):
+
+    """Raised when trying to create a new managed plotitem with a name
+    that has already been registered.
+    """
 
 
 class ClientIDAlreadyRegisteredError(DataItemAlreadyExists):
@@ -21,7 +33,12 @@ class ClientIDAlreadyRegisteredError(DataItemAlreadyExists):
     one that has already been registered
     """
 
-    pass
+
+class NoSuchDataItemError(PlotDataManagerError):
+
+    """Raised when trying to create a new plotitem from a data source that
+    has not been regeistered before.
+    """
 
 
 class PlotDataManager:
@@ -33,127 +50,134 @@ class PlotDataManager:
     It also provides acces to the raw data.
     """
 
-    TABS_DIR: pathlib.Path = pathlib.Path("/tabs")
-    STATIC_DATA_DIR: pathlib.Path = pathlib.Path("/tabs/static_data")
-    NETWORK_CLIENTS_DIR: pathlib.Path = pathlib.Path("/tabs/network_clients")
-    RAW_DATA_FILE: str = "raw_data.dat"
-    PLOTITEM_DIR_NAME: str = "plotitems"
-
     plotitem_type: type[pg.PlotDataItem] = pg.PlotDataItem
 
     def __init__(self) -> None:
         """Initialize a new PlotDataManager instance
         """
-        self.shell: filesystem.StupidlySimpleShell = filesystem.StupidlySimpleShell()
+        self.shell = filesystem.StupidlySimpleShell()
 
-        self.shell.mkdir(self.TABS_DIR)
-        self.shell.mkdir(self.STATIC_DATA_DIR)
-        self.shell.mkdir(self.NETWORK_CLIENTS_DIR)
+    def apply_configuration(
+        self, config: dict = defaults.Config["PlotDataManager"]
+    ) -> None:
+        configuration = namedtuple("configuration", ("filesystem",
+                                                     "static_data",
+                                                     "network_clients"))
+        self._config = configuration(**config)
+        self._apply_filesystem_config()
 
-    def _update_plot_items(self, data_path: pathlib.Path) -> None:
-        """Update all plotitems that are associated with data stored at
-        data_path with the current data.
+    def _apply_filesystem_config(self):
+        def generate_filesystem_recursivley(nodes):
+            for node in nodes:
+                name = node["name"]
+                self.shell.mkdir(name)
+                self.shell.cd(name)
+                generate_filesystem_recursivley(node.get("children", []))
+                self.shell.cd("..")
 
-        Args:
-            data_path (pathlib.Path): The path to the dataobject.
-        """
-        tabdir = data_path.parent
-        plotitem_file = (tabdir / self.PLOTITEM_DIR_NAME
-                         / f"{tabdir.name}.plotitem")
+        generate_filesystem_recursivley(self._config.filesystem)
 
-        data = self.shell.get_file(data_path).data()
-        file = self.shell.get_file(plotitem_file)
-        file.data().setData(*data)
+    def _update_plotitems(self, path: pathlib.Path):
+        data = self.shell.get_data(path)
+
+        with self.shell.managed_cd(path.parent):
+            self.shell.cd(self._config.static_data["plotitem_dir"])
+            for file in self.shell.ls():
+                self.shell.get_data(file).setData(*data)
+
+    def get_static_plotitem(
+        self, tab_name: str, data_name: str, plotitem_name: str
+    ) -> pg.PlotDataItem:
+        cfg = self._config.static_data
+        root_dir = pathlib.Path(cfg["root_dir"])
+
+        data_dir = root_dir / cfg["data_dir"].format(tab_name=tab_name)
+        data_file = data_dir / cfg["data_file"].format(data_name=data_name)
+        try:
+            data = self.shell.get_data(data_file)
+        except filesystem.InvalidPathError:
+            raise NoSuchDataItemError(data_file) from None
+
+        plotitem_dir = data_dir / cfg["plotitem_dir"]
+        plotitem_file = plotitem_dir / cfg["plotitem_file"].format(plotitem_name=plotitem_name)
+
+        try:
+            self.shell.touch(plotitem_file)
+        except filesystem.InvalidPathError:
+            raise DataItemAlreadyExists(plotitem_file) from None
+
+        plotitem = self.plotitem_type(*data)
+        self.shell.set_data(plotitem_file, plotitem)
+
+        return plotitem
 
     def register_static_data(
-        self, name: str, data: tuple[list[float], list[float]]
-    ) -> pg.PlotDataItem:
-        """Register a new static data source. The PlotDataManager will store
-        the data, create a plotitem associated with this data and update the
-        plotitem whenever the data changes. The plotitem is returned so it can
-        be added to a pg.PlotWidget instance.
+        self,
+        tab_name: str,
+        data_name: str,
+        data: tuple[list[float], list[float]]
+    ):
 
-        Args:
-            name (str): The name of the new plotitem
-            data (tuple[list[float], list[float]]): The data to display in the
-                plotitem
-        """
-        with self.shell.managed_cd(self.STATIC_DATA_DIR) as shell:
-            # create directory for this dataitem at /tabs/static_data/name
-            try:
-                shell.mkdir(name)
-            except filesystem.InvalidPathError:
-                raise DataItemAlreadyExists(name)
+        cfg = self._config.static_data
+        root_dir = pathlib.Path(cfg["root_dir"])
 
-            # create the file to store the data at
-            # /tabs/static_data/name/raw_data.dat
-            shell.cd(name)
-            file = filesystem.PointListFileObject(name=self.RAW_DATA_FILE)
-            shell.add_file(file)
+        data_dir = root_dir / cfg["data_dir"].format(tab_name=tab_name)
+        data_file = data_dir / cfg["data_file"].format(data_name=data_name)
 
-            # create plotitem dir and add a plotitem to it at
-            # /tabs/static_data/name/plotitems/name.plotitem
-            shell.mkdir(self.PLOTITEM_DIR_NAME)
-            shell.cd(self.PLOTITEM_DIR_NAME)
+        try:
+            self.shell.mkdir(data_dir)
+        except filesystem.InvalidPathError:
+            raise DataItemAlreadyExists(data_dir) from None
 
-            plotitem = self.plotitem_type(name=name)
-            plotfile = filesystem.FileObject(name=f"{name}.plotitem",
-                                             data=plotitem)
-            shell.add_file(plotfile)
+        self.shell.touch(data_file, file_type=fsutils.TwoDimensionalPointArrayFile)
 
-            # notify the plotitems when data has changed
-            shell.cd("..")
-            shell.add_file_watcher(self.RAW_DATA_FILE, self._update_plot_items)
-            file.extendPoints(data)
+        self.shell.set_data(data_file, data)
+        self.shell.watch_file(data_file, self._update_plotitems)
 
-            # return the ploitem for further processing
-            return plotitem
+        plotitem_dir = data_dir / cfg["plotitem_dir"]
+        self.shell.mkdir(plotitem_dir)
 
-    def register_networkclient(
-        self, client: _client.EasyGTCPClient
-    ) -> pg.PlotDataItem:
-        """Register a new network client. The PlotDataManager will store the
-        network client, create a plotitem associated with the data coming from
-        the network client and update the plotitem whenever new data arrives
-        form the network client. The plotitem is returned so it can be added
-        to a pg.PlotWidget instance.
+    def get_network_plotitem(self, tab_name: str, client_id: str) -> pg.PlotDataItem:
+        cfg = self._config.network_clients
+        root_dir = pathlib.Path(cfg["root_dir"])
 
-        Args:
-            client (_client.EasyGTCPClient): The network client to register.
-        """
-        with self.shell.managed_cd(self.NETWORK_CLIENTS_DIR) as shell:
-            clientdir = client.getClientID()
+        data_dir = root_dir / cfg["data_dir"].format(tab_name=tab_name)
+        data_file = data_dir / cfg["data_file"].format(client_id=client_id)
+        try:
+            data = self.shell.get_data(data_file)
+        except filesystem.InvalidPathError:
+            raise NoSuchDataItemError(data_file) from None
 
-            # create a new directory for this client
-            try:
-                shell.mkdir(clientdir)
-            except filesystem.InvalidPathError:
-                raise ClientIDAlreadyRegisteredError(clientdir)
+        plotitem_dir = data_dir / cfg["plotitem_dir"]
+        plotitem_file = plotitem_dir / cfg["plotitem_file"].format(client_id=client_id)
 
-            # change into /tabs/network_clients/clientID
-            shell.cd(clientdir)
+        try:
+            self.shell.touch(plotitem_file)
+        except filesystem.InvalidPathError:
+            raise DataItemAlreadyExists(plotitem_file) from None
 
-            # create File to store the data in
-            # /tabs/network_clients/clientID/raw_data.dat
-            file = filesystem.PointListFileObject(
-                name=self.RAW_DATA_FILE)
-            shell.add_file(file)
-            # pipe new client data into the file
-            client.newLineOfData.connect(file.appendPoint)
-            # notify plotitems when data has changed
-            shell.add_file_watcher(self.RAW_DATA_FILE, self._update_plot_items)
+        plotitem = self.plotitem_type(*data)
+        self.shell.set_data(plotitem_file, plotitem)
 
-            # create a subdir for the plotitems at /tabs/clientID/plotitems
-            shell.mkdir(self.PLOTITEM_DIR_NAME)
-            # change into it
-            shell.cd(self.PLOTITEM_DIR_NAME)
+        return plotitem
 
-            # create a new plotitem as well as a file to store it in at
-            # /tabs/clientID/plotitems/clientID.plotitem
-            plotitem = self.plotitem_type(name=clientdir)
-            plotfile = filesystem.FileObject(name=f"{clientdir}.plotitem",
-                                             data=plotitem)
-            shell.add_file(plotfile)
+    def register_network_client(self, tab_name: str, client: _client.EasyGTCPClient):
+        cfg = self._config.network_clients
+        root_dir = pathlib.Path(cfg["root_dir"])
 
-            # return the plotitem for further processing
-            return plotitem
+        data_dir = root_dir / cfg["data_dir"].format(tab_name=tab_name)
+        data_file = data_dir / cfg["data_file"].format(client_id=client.getClientID())
+
+        try:
+            self.shell.mkdir(data_dir)
+        except filesystem.InvalidPathError:
+            raise ClientIDAlreadyRegisteredError(data_dir) from None
+
+        self.shell.touch(data_file, file_type=fsutils.NetworkClientFile)
+        file = self.shell.filesystem.get_node(data_file)
+        file.set_client(client)
+
+        self.shell.watch_file(data_file, self._update_plotitems)
+
+        plotitem_dir = data_dir / cfg["plotitem_dir"]
+        self.shell.mkdir(plotitem_dir)

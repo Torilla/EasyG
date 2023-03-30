@@ -2,71 +2,8 @@ from __future__ import annotations
 from typing import Any
 from collections.abc import Set, Iterator, Callable, Iterable
 
+from functools import wraps
 import pathlib
-
-from PyQt5 import QtCore
-
-
-class DataObject(QtCore.QObject):
-
-    """class DataObject
-
-    Represents a File like object in a Filesystem. Allows to track data changes
-    via the DataChanged Signal, which is emitted each time set_data is called
-    on an instance.
-
-    Attributes:
-        DataChanged ( QtCore.pyqtSignal[pathlib.Path]): Emitted with the
-            path to the owner whenever set_data is called on the isntance
-        owner (LeafNode): The owning LeafNode of the DtaObject.
-    """
-
-    DataChanged = QtCore.pyqtSignal(pathlib.Path)
-
-    def __init__(self, owner: LeafNode, data: Any = None, *args, **kwargs):
-        """initalize a new DataObject.
-
-        Args:
-            owner (LeafNode): The owning LeafNode of the DataObject.
-            data (Any, optional): The data to store in the DataObject.
-            *args: Passed to QtCore.QObject.__init__
-            **kwargs: Passed to QtCore.QObject.__init__
-        """
-        super().__init__(*args, **kwargs)
-
-        self.owner = owner
-        self._data = data
-
-    @property
-    def data(self) -> Any:
-        """Return the data stored in this DataObject
-
-        Returns:
-            Any: The stored data
-        """
-        return self._data
-
-    @data.setter
-    def data(self, d: Any) -> None:
-        """Convinence setter to set the data of the DataObhect. Calls
-        DataObject.set_data. DataChanged will be emitted on exit.
-
-        Args:
-            d (Any): The data to set.
-        """
-        self.set_data(d)
-
-    def set_data(self, d: Any) -> None:
-        """Set the data of the DataObhect. DataChanged will be emitted on exit.
-
-        Args:
-            d (Any): The data to set.
-        """
-        self._data = d
-        self.emit_data_changed_signal()
-
-    def emit_data_changed_signal(self):
-        self.DataChanged.emit(self.owner.get_path())
 
 
 class FilesystemError(Exception):
@@ -185,22 +122,26 @@ class LeafNode(AbstractNode):
         """
         super().__init__(name=name, parent=parent)
 
-        self._dataobj = DataObject(owner=self, data=data)
+        self._data = data
+        self._callbacks: set[Callable[[pathlib.Path], None]] = set()
 
     @property
     def data(self) -> Any:
-        return self._dataobj.data
+        return self._data
 
     @data.setter
     def data(self, d: Any) -> None:
         self.set_data(d)
 
     def set_data(self, d: Any) -> None:
-        self._dataobj.set_data(d)
+        self._data = d
+        self.execute_callbacks()
 
-    def watch(
-        self, callback: Callable[[pathlib.Path], None]
-    ) -> QtCore.QMetaObject.Connection:
+    def clear_data(self):
+        self._data = None
+        self.execute_callbacks()
+
+    def watch(self, callback: Callable[[pathlib.Path], None]):
         """Register a callback that is triggered whenver the data in this
         LeafNode changes. The callback recieves the absolute path to this
         node.
@@ -209,19 +150,25 @@ class LeafNode(AbstractNode):
             callback (Callable[[pathlib.Path], None]): The callback to invoke
                 when the data associated with this leaf node changes.
         """
-        return self._dataobj.DataChanged.connect(callback)
+        self._callbacks.add(callback)
 
-    def unwatch(self, *connections: QtCore.QMetaObject.Connection):
-        self._dataobj.DataChanged.disconnect(*connections)
+    def unwatch(self, *callbacks: Callable[[pathlib.Path], None]):
+        if callbacks:
+            for callback in callbacks:
+                self._callbacks.remove(callback)
+
+        else:
+            self._callbacks.clear()
+
+    def execute_callbacks(self):
+        path = self.get_path()
+        for callback in self._callbacks:
+            callback(path)
 
 
 class Node(AbstractNode):
-
     def __init__(
-        self,
-        name: str,
-        parent: Node | None = None,
-        children: Iterable[Node] = []
+        self, name: str, parent: Node | None = None, children: Iterable[Node] = []
     ):
         super().__init__(name=name, parent=parent)
 
@@ -303,7 +250,7 @@ class Node(AbstractNode):
         """
         string = f"{self.name}/"
 
-        for kid in self.children:
+        for kid in sorted(self.children, key=lambda node: node.name):
             string += "\n" + "|  " * indent
             if isinstance(kid, Node):
                 string += f"|__{kid.tree_repr(indent + 1)}"
@@ -366,12 +313,9 @@ class NodeSet(Set[Node | LeafNode]):
             raise TypeError(f"Expected str or AbstractNode, got {type(name)}")
 
         elif isinstance(name, AbstractNode):
-            result = name in self._members
+            name = name.name
 
-        else:
-            result = any(node.name == name for node in self)
-
-        return result
+        return any(node.name == name for node in self)
 
     def __bool__(self) -> bool:
         """Determines the truth value of the set
@@ -393,8 +337,9 @@ class NodeSet(Set[Node | LeafNode]):
             TypeError: If node is not an instance of AbstractNode
         """
         if not isinstance(node, AbstractNode):
-            raise TypeError(f"Expected instance of {AbstractNode}, got "
-                            f"{type(node)}")
+            raise TypeError(
+                f"Expected instance of {AbstractNode}, got " f"{type(node)}"
+            )
 
         if node in self:
             raise DuplicateNodeNameError(node.name)
@@ -452,7 +397,6 @@ class InvalidPathError(FilesystemError):
 
 class Filesystem:
     def __init__(self):
-
         # root node of the filesystem
         self._root = Node(name="/")
 
@@ -465,7 +409,7 @@ class Filesystem:
         root, *parts = path.parts
 
         if root == self.root.name:
-            node = self.root
+            node: Node | LeafNode = self.root
         else:
             try:
                 node = self.root.get_child(root)
@@ -495,9 +439,7 @@ class Filesystem:
         return node.remove_child(path.name)
 
     def move_node(
-        self,
-        source_path: str | pathlib.Path,
-        target_path: str | pathlib.Path
+        self, source_path: str | pathlib.Path, target_path: str | pathlib.Path
     ) -> None:
         source_path = pathlib.Path(source_path)
         target_path = pathlib.Path(target_path)
@@ -549,6 +491,53 @@ class ChangeDirContextManager:
         self._shell.cd(self._pwd)
 
 
+def resolved_path(
+    default_path: str | pathlib.Path | None = None, double_paths=False
+) -> Callable:
+    def outer_wrapper(func: Callable) -> Callable:
+        if default_path is None and double_paths:
+
+            @wraps(func)
+            def wrapper(
+                self: StupidlySimpleShell,
+                path1: str | pathlib.Path,
+                path2: str | pathlib.Path,
+                *args,
+                **kwargs,
+            ) -> Any:
+                path1 = self.resolve_path(path1)
+                path2 = self.resolve_path(path2)
+
+                return func(self, path1, path2, *args, **kwargs)
+
+        elif default_path is None:
+
+            @wraps(func)
+            def wrapper(
+                self: StupidlySimpleShell, path: str | pathlib.Path, *args, **kwargs
+            ) -> Any:
+                path = self.resolve_path(path)
+
+                return func(self, path, *args, **kwargs)
+
+        else:
+
+            @wraps(func)
+            def wrapper(
+                self: StupidlySimpleShell,
+                path: str | pathlib.Path = default_path,
+                *args,
+                **kwargs,
+            ) -> Any:
+                path = self.resolve_path(path)
+
+                return func(self, path, *args, **kwargs)
+
+        return wrapper
+
+    return outer_wrapper
+
+
 class StupidlySimpleShell:
     def __init__(self):
         self._filesystem = Filesystem()
@@ -567,10 +556,14 @@ class StupidlySimpleShell:
         """
         return self._cwd.get_path()
 
-    def tree(self, path: str | pathlib.Path = ".") -> str:
+    @resolved_path(default_path=".")
+    def tree(self, path: pathlib.Path) -> str:
         path = self.resolve_path(path)
+        node = self.filesystem.get_node(path)
+        if not isinstance(node, Node):
+            raise InvalidPathError(f"Not a directory: {path}")
 
-        return self.filesystem.get_node(path).tree_repr()
+        return node.tree_repr()
 
     def resolve_path(self, path: str | pathlib.Path) -> pathlib.Path:
         """Return the absolute representation of path, with all relative parts
@@ -622,15 +615,14 @@ class StupidlySimpleShell:
 
         return path
 
-    def cd(self, path: str | pathlib.Path) -> None:
+    @resolved_path()
+    def cd(self, path: pathlib.Path) -> None:
         """Change the current working directory to path. All subsequent
         Filesystem operations will be relative to this directory.
 
         Args:
             path (str | pathlib.Path): The path to change to.
         """
-        path = self.resolve_path(path)
-
         try:
             node = self.filesystem.get_node(path)
         except NodeDoesNotExistError:
@@ -643,7 +635,7 @@ class StupidlySimpleShell:
 
     def managed_cd(self, path: str | pathlib.Path) -> ChangeDirContextManager:
         """Create a context manager that changes the current working directory
-        to path and return to the previous working directory on exit.
+        to path on enter and returns to the previous working directory on exit.
 
         Args:
             path (str | pathlib.Path): The path to change to when entering the
@@ -655,7 +647,8 @@ class StupidlySimpleShell:
         """
         return ChangeDirContextManager(self, path)
 
-    def mkdir(self, path: str | pathlib.Path, parents: bool = False) -> None:
+    @resolved_path()
+    def mkdir(self, path: pathlib.Path, parents: bool = False) -> None:
         """Create a new directory at path. If parents is true all non-existing
         directories in path will also be created.
 
@@ -668,10 +661,8 @@ class StupidlySimpleShell:
 
         Raises:
             InvalidPathError: When parents is false and any of the directories
-                in path do not exist.
+                in path do not exist or an invalid path has been supplied.
         """
-
-        path = self.resolve_path(path)
 
         if not path.name:
             raise InvalidPathError(path)
@@ -701,19 +692,14 @@ class StupidlySimpleShell:
             for part in path.parts[1:]:
                 try:
                     node = node.get_child(part)
-                    if not isinstance(node, Node):
-                        raise InvalidPathError(path)
                 except NodeDoesNotExistError:
-                    if not isinstance(node, Node):
-                        raise InvalidPathError(path)
-
                     node = Node(name=part, parent=node)
 
-    def mv(
-        self,
-        source_path: str | pathlib.Path,
-        target_path: str | pathlib.Path
-    ) -> None:
+                if not isinstance(node, Node):
+                    raise InvalidPathError(path)
+
+    @resolved_path(double_paths=True)
+    def mv(self, source_path: pathlib.Path, target_path: pathlib.Path) -> None:
         """Move the directory in source_path to the directory specified in
         target_path. If the last directory in target_path does not exist, but
         the second to last does, the source_path directory gets renamed to the
@@ -725,16 +711,10 @@ class StupidlySimpleShell:
             target_path (str | pathlib.Path): The path to the directory which
                 to move the source directory to
         """
-        source_path = self.resolve_path(source_path)
-        target_path = self.resolve_path(target_path)
-
         self.filesystem.move_node(source_path, target_path)
 
-    def touch(
-        self, path: pathlib.Path, file_type: type[LeafNode] = LeafNode
-    ) -> None:
-        path = self.resolve_path(path)
-
+    @resolved_path()
+    def touch(self, path: pathlib.Path, file_type: type[LeafNode] = LeafNode) -> None:
         if not path.name:
             raise InvalidPathError(path)
 
@@ -751,29 +731,35 @@ class StupidlySimpleShell:
         except DuplicateNodeNameError:
             raise InvalidPathError(f"Already exists: {path}") from None
 
-    def get_data(self, path: str | pathlib.Path) -> Any:
-        path = self.resolve_path(path)
-        node = self.filesystem.get_node(path)
+    @resolved_path()
+    def get_data(self, path: pathlib.Path) -> Any:
+        try:
+            node = self.filesystem.get_node(path)
+        except NodeDoesNotExistError:
+            raise InvalidPathError(path) from None
+
         if not isinstance(node, LeafNode):
             raise InvalidPathError(f"Not a file: {path}")
 
         return node.data
 
-    def set_data(
-        self, path: str | pathlib.Path, data: Any, *args, **kwargs
-    ) -> None:
-        path = self.resolve_path(path)
+    @resolved_path()
+    def set_data(self, path: pathlib.Path, data: Any, *args, **kwargs) -> None:
         node = self.filesystem.get_node(path)
         if not isinstance(node, LeafNode):
             raise InvalidPathError(f"Not a file: {path}")
 
         node.set_data(data, *args, **kwargs)
 
-    def rm(
-        self, path: str | pathlib.Path, recursive: bool = False
-    ) -> Node | LeafNode:
-        path = self.resolve_path(path)
+    @resolved_path()
+    def clear_data(self, path: pathlib.Path):
+        node = self.filesystem.get_node(path)
+        if not isinstance(node, LeafNode):
+            raise InvalidPathError(f"Not a file: {path}")
+        node.clear_data()
 
+    @resolved_path()
+    def rm(self, path: pathlib.Path, recursive: bool = False) -> Node | LeafNode:
         try:
             node = self.filesystem.get_node(path)
         except NodeDoesNotExistError:
@@ -787,16 +773,17 @@ class StupidlySimpleShell:
 
         return node.parent.remove_child(node.name)
 
-    def ls(self, path: str | pathlib.Path = ".") -> list[str]:
-        path = self.resolve_path(path)
+    @resolved_path(default_path=".")
+    def ls(self, path: pathlib.Path) -> list[str]:
         node = self.filesystem.get_node(path)
         if not isinstance(node, Node):
             raise InvalidPathError(f"Not a directory: {path}")
 
         return sorted(c.name for c in node.children)
 
+    @resolved_path()
     def watch_file(
-        self, path: str | pathlib.Path, callback: Callable[[pathlib.Path], None]
+        self, path: pathlib.Path, callback: Callable[[pathlib.Path], None]
     ) -> QtCore.QMetaObject.Connection:
         """Register a callback that will be triggered whenever the data
         stored in path changes. The callback will receive the path to the
@@ -808,7 +795,6 @@ class StupidlySimpleShell:
                 changed.
         """
 
-        path = self.resolve_path(path)
         node = self.filesystem.get_node(path)
 
         if not isinstance(node, LeafNode):
@@ -816,12 +802,10 @@ class StupidlySimpleShell:
 
         return node.watch(callback)
 
+    @resolved_path()
     def unwatch_file(
-        self,
-        path: str | pathlib.Path,
-        *connections: QtCore.QMetaObject.Connection
+        self, path: pathlib.Path, *connections: QtCore.QMetaObject.Connection
     ) -> None:
-        path = self.resolve_path(path)
         node = self.filesystem.get_node(path)
 
         if not isinstance(node, LeafNode):

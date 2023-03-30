@@ -8,10 +8,15 @@ PlotDataManager:
         - name: network_clients
 
   static_data:
-    root: /tabs/static_data
+    root_dir: /tabs/static_data
     data_dir: "{tab_name}"
-    data_file: data.dat
+    data_file: "{data_name}.dat"
     plotitem_dir: plotitems
-    plotitem_file: plotitem.obj
+    plotitem_file: "{plotitem_name}.obj"
 
-  network_clients: {}
+  network_clients:
+    root_dir: /tabs/network_clients
+    data_dir: "{tab_name}"
+    data_file: "{client_id}.dat"
+    plotitem_dir: plotitems
+    plotitem_file: "{client_id}.obj"

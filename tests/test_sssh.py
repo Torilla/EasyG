@@ -61,6 +61,21 @@ class TestFileSystemBasics(unittest.TestCase):
         self.assertEqual(self.shell.ls(), ["b"])
         self.assertEqual(self.shell.ls("b"), ["a"])
 
+    def test_cant_create_duplicate_directories(self):
+        self.shell.mkdir("a")
+        with self.assertRaises(filesystem.InvalidPathError):
+            self.shell.mkdir("a")
+
+        with self.assertRaises(filesystem.InvalidPathError):
+            self.shell.touch("a")
+
+        self.shell.touch("b")
+        with self.assertRaises(filesystem.InvalidPathError):
+            self.shell.mkdir("b")
+
+        with self.assertRaises(filesystem.InvalidPathError):
+            self.shell.touch("b")
+
     def test_can_set_and_retrieve_data(self):
         data = "test"
         self.shell.touch("a")
