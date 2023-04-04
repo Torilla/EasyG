@@ -1,4 +1,5 @@
 from collections import namedtuple
+import pathlib
 
 from EasyG.datautils import filesystem
 from EasyG.network import client as _client
@@ -42,8 +43,50 @@ class NetworkClientFile(TwoDimensionalPointArrayFile):
     def _store_data(self, data: list[float]):
         self.set_data(data, action="append")
 
-    def start_parsing(self):
-        self.client.startParsing()
 
-    def stop_parsing(self):
-        self.client.stopParsing()
+shell_extensions: list = []
+
+
+def shell_extension(func):
+    if hasattr(filesystem.StupidlySimpleShell, func.__name__):
+        raise ValueError("Cannot override a function as shell extension!")
+
+    elif any(f.__name__ == func.__name__ for f in shell_extensions):
+        raise ValueError(f"Already registered: {func.__name__}")
+
+    shell_extensions.append(func)
+
+    return func
+
+
+def load_shell_extensions():
+    for func in shell_extensions:
+        if not hasattr(filesystem.StupidlySimpleShell, func.__name__):
+            setattr(filesystem.StupidlySimpleShell, func.__name__, func)
+
+
+@shell_extension
+@filesystem.resolved_path(default_path=".")
+def id(self, path: pathlib.Path) -> str:
+    try:
+        node = self.filesystem.get_node(path)
+    except filesystem.NodeDoesNotExistError:
+        raise filesystem.InvalidPathError(path) from None
+
+    return str(hash(node))
+
+
+@shell_extension
+@filesystem.resolved_path(default_path=".")
+def set_client(self, path, client):
+    try:
+        node = self.filesystem.get_node(path)
+    except filesystem.NodeDoesNotExistError:
+        raise filesystem.InvalidPathError(path) from None
+
+    if not isinstance(node, NetworkClientFile):
+        raise filesystem.InvalidPathError(
+            f"Not a NetworkClientFile: {path}"
+        ) from None
+
+    node.set_client(client)

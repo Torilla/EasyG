@@ -1,0 +1,7 @@
+---
+
+PlotDataManager:
+  filesystem:
+    - name: data
+    - name: plotitems
+    - name: plotwidgets

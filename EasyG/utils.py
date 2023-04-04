@@ -2,7 +2,7 @@ from typing import Callable
 
 from PyQt5 import QtCore
 
-from EasyG.gui import mainwindow
+from EasyG.gui import guiwidgets
 from EasyG.network import server as _server
 from EasyG.network import client as _client
 from EasyG.gui import widgets
@@ -70,7 +70,7 @@ class ServerPlugin(QtCore.QObject):
 
     def __init__(
         self,
-        gui: mainwindow.MainWindow,
+        gui: guiwidgets.MainWindow,
         server: _server.EasyGAuthenticationServer | None = None,
         *args, **kwargs
     ):

@@ -1,6 +1,6 @@
 from PyQt5 import QtCore, QtWidgets
 
-from .centraltabwidget import TabManagerWidget
+from EasyG.gui import widgets
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -59,3 +59,41 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def print_status(self, message, timeout=10000):
         self.statusBar().showMessage(message, timeout)
+
+
+class IndividualTabWidget(QtWidgets.QWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        layout = QtWidgets.QGridLayout()
+        self.setLayout(layout)
+
+        self.splitter = widgets.GridSplitterWidget()
+        layout.addWidget(self.splitter, 0, 0)
+
+    def insert_column(self, columnIdx):
+        self.splitter.insertColumn(columnIdx)
+
+    def insert_widget(self, columnIdx, rowIdx, widget):
+        self.splitter.insertWidget(columnIdx, rowIdx, widget)
+
+
+class TabManagerWidget(QtWidgets.QTabWidget):
+    _TabWidgetType = IndividualTabWidget
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.setTabsClosable(True)
+        self.tabCloseRequested.connect(self.removeTab)
+
+    def addTab(self, label, *args, **kwargs):
+        return self.insertTab(*args, idx=-1, label=label, **kwargs)
+
+    def insertTab(
+        self, idx: int, label: str, *args, **kwargs
+    ) -> IndividualTabWidget:
+        widget = self._TabWidgetType(*args, **kwargs)
+        super().insertTab(idx, widget, label)
+
+        return widget

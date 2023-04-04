@@ -711,7 +711,10 @@ class StupidlySimpleShell:
             target_path (str | pathlib.Path): The path to the directory which
                 to move the source directory to
         """
-        self.filesystem.move_node(source_path, target_path)
+        try:
+            self.filesystem.move_node(source_path, target_path)
+        except InvalidPathError as err:
+            raise err from None
 
     @resolved_path()
     def touch(self, path: pathlib.Path, file_type: type[LeafNode] = LeafNode) -> None:
@@ -721,7 +724,7 @@ class StupidlySimpleShell:
         try:
             parent = self.filesystem.get_node(path.parent)
         except NodeDoesNotExistError:
-            raise InvalidPathError(path)
+            raise InvalidPathError(path) from None
 
         if not isinstance(parent, Node):
             raise InvalidPathError(f"Not a directory: {path}")
@@ -784,7 +787,7 @@ class StupidlySimpleShell:
     @resolved_path()
     def watch_file(
         self, path: pathlib.Path, callback: Callable[[pathlib.Path], None]
-    ) -> QtCore.QMetaObject.Connection:
+    ) -> Callable[[pathlib.Path], None]:
         """Register a callback that will be triggered whenever the data
         stored in path changes. The callback will receive the path to the
         dataobject that has changed.
@@ -804,7 +807,7 @@ class StupidlySimpleShell:
 
     @resolved_path()
     def unwatch_file(
-        self, path: pathlib.Path, *connections: QtCore.QMetaObject.Connection
+        self, path: pathlib.Path, *connections: Callable[[pathlib.Path], None]
     ) -> None:
         node = self.filesystem.get_node(path)
 

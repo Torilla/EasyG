@@ -1,5 +1,5 @@
-from EasyG.datautils import plotdataitemmanager
-from EasyG.gui import mainwindow
+from EasyG.datautils import plotdatamanager
+from EasyG.gui import guiwidgets
 from EasyG.network import server as _server
 from EasyG.ecg import exampledata
 from EasyG import utils
@@ -12,10 +12,9 @@ class EasyG(object):
     ):
         super().__init__()
 
-        self.datamanager = plotdataitemmanager.PlotDataManager()
-        self.datamanager.apply_configuration()
+        self.datamanager = plotdatamanager.PlotDataManager()
 
-        self.gui = mainwindow.MainWindow()
+        self.gui = guiwidgets.MainWindow()
         self.gui.OpenExampleRequest.connect(self._onOpenExampleRequest)
 
         self._server_plugin = utils.ServerPlugin(self.gui, server)
@@ -26,14 +25,13 @@ class EasyG(object):
         tabName = client.getClientID()
         tab = self.gui.centralWidget().addTab(tabName)
 
-        self.datamanager.register_network_client(tab_name=tabName, client=client)
-        plotItem = self.datamanager.get_network_plotitem(
-            tab_name=tabName, client_id=client.getClientID()
-        )
+        data_id = self.datamanager.register_network_client(client=client)
+        plotitem = self.datamanager.get_managed_plotitem(data_id=data_id)
+        plotwidget = self.datamanager.get_managed_plotwidget()
+        plotwidget.addItem(plotitem)
         # create the first column of plots and insert the first plotter
-        tab.insertColumn(0)
-        tab.insertPlotWidget(0, 0, title=tabName)
-        tab.addItemToPlot(0, 0, plotItem)
+        tab.insert_column(0)
+        tab.insert_widget(0, 0, plotwidget)
 
         client.startParsing()
 
@@ -47,21 +45,11 @@ class EasyG(object):
                           itemName=exampleName, data=(x, y))
 
     def createNewTab(self, tabName, plotName, itemName, data):
-        self.datamanager.register_static_data(tab_name=tabName, data_name=plotName, data=data)
-        plotItem = self.datamanager.get_static_plotitem(
-            tab_name=tabName, data_name=plotName, plotitem_name=itemName)
+        data_id = self.datamanager.register_data_source(data=data)
+        plotitem = self.datamanager.get_managed_plotitem(data_id=data_id)
         tab = self.gui.tabManager.addTab(tabName)
-
+        plotwidget = self.datamanager.get_managed_plotwidget()
+        plotwidget.addItem(plotitem)
         # create the first column of plots and insert the first plotter
-        tab.insertColumn(0)
-        tab.insertPlotWidget(0, 0, title=plotName)
-        tab.addItemToPlot(0, 0, plotItem)
-
-        # if this is the first tab, add the dock widget as normal
-#        if self.gui.tabManager.count() == 1:
-#            self.gui.addDockWidget(Qt.LeftDockWidgetArea, tab.dockWidget)
-#
-#        # otherwise create tabified dock widgets
-#        else:
-#            dock = self.gui.tabManager.currentWidget().dockWidget
-#            self.gui.tabifyDockWidget(dock, tab.dockWidget)
+        tab.insert_column(0)
+        tab.insert_widget(0, 0, plotwidget)

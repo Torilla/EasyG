@@ -7,8 +7,11 @@ class InvalidConfigurationFile(yaml.scanner.ScannerError):
     """Raised when loading a configuration file failes"""
 
 
+Config_T = dict[str, str | dict | list]
+
+
 def parse_default_configurations():
-    Config = {}
+    Config = Config_T()
 
     with resources.path("EasyG", "defaults") as path:
         for file in path.rglob("*.y*ml"):
