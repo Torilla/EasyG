@@ -1,3 +1,10 @@
+"""The StupidlySimpleShell
+
+This module implements a basic FileSystem, (remotely) inspired by the Unix
+filesystem, as well as a StupidlySimpleShell that adds 'bash-like'
+functionality on top. See the respective class documentation for details.
+
+"""
 from __future__ import annotations
 from typing import Any
 from collections.abc import Set, Iterator, Callable, Iterable
@@ -6,9 +13,17 @@ from functools import wraps
 import pathlib
 
 
+__author__ = "Thomas Mullan"
+__copyright__ = "Copyright 2023, Thomas Mullan"
+__license__ = "GNU General Public License v3.0"
+__version__ = "0.0.1"
+__maintainer__ = "Thomas Mullan"
+__status__ = "Prototype"
+
+
 class FilesystemError(Exception):
 
-    """Emitted when a Filesystem operation fails. Baseclass for more precise
+    """Emitted when a Filesystem operation fails. Base class for more precise
     Filesystem type errors.
     """
 
@@ -22,15 +37,13 @@ class DuplicateNodeNameError(FilesystemError):
 
 class NodeDoesNotExistError(FilesystemError):
 
-    """Raised when trying to acces a node that does not exist"""
+    """Raised when trying to access a node that does not exist"""
 
 
 class AbstractNode:
 
-    """class AbstractNode
-
-    Class providing common attributes and methods for all Node types. Not meant
-    to be used directly.
+    """Class providing common attributes and methods for all Node types.
+    Not meant to be used directly.
 
     Attributes:
         name (str): The name of the node
@@ -71,7 +84,7 @@ class AbstractNode:
     def set_parent(self, parent: Node | None) -> None:
         """Set the parent of this node to parent. If parent is a Node instance,
         this node will take ownership of the current node and it will add
-        itself to the list of child inodes of the new parent node. If it is
+        itself to the list of child nodes of the new parent node. If it is
         None, and the node previously had a parent, it will no longer be owner
         by that parent and it will remove itself from the parents set of child
         nodes.
@@ -142,8 +155,8 @@ class LeafNode(AbstractNode):
         self.execute_callbacks()
 
     def watch(self, callback: Callable[[pathlib.Path], None]):
-        """Register a callback that is triggered whenver the data in this
-        LeafNode changes. The callback recieves the absolute path to this
+        """Register a callback that is triggered whenever the data in this
+        LeafNode changes. The callback receives the absolute path to this
         node.
 
         Args:
@@ -243,7 +256,7 @@ class Node(AbstractNode):
         Args:
             indent (int, optional): Internal variable not meant for using.
                 Determines the indentation of the current level. Is used
-                recursivley
+                recursively
 
         Returns:
             str: The tree representation of this node tree
@@ -300,7 +313,7 @@ class NodeSet(Set[Node | LeafNode]):
         the set, false otherwise. Any other object will raise a TypeErro
 
         Args:
-            name (object): The name or an LeafNode isntance with the same
+            name (object): The name or an LeafNode instance with the same
                 name to test
 
         Returns:
@@ -356,7 +369,7 @@ class NodeSet(Set[Node | LeafNode]):
             Node | LeafNode: The node with name equal to the given name
 
         Raises:
-            NodeDoesNotExistError: If no node with the given name exsits in
+            NodeDoesNotExistError: If no node with the given name exists in
                 the set
         """
         member: Node | LeafNode
@@ -558,7 +571,6 @@ class StupidlySimpleShell:
 
     @resolved_path(default_path=".")
     def tree(self, path: pathlib.Path) -> str:
-        path = self.resolve_path(path)
         node = self.filesystem.get_node(path)
         if not isinstance(node, Node):
             raise InvalidPathError(f"Not a directory: {path}")
@@ -704,7 +716,7 @@ class StupidlySimpleShell:
         target_path. If the last directory in target_path does not exist, but
         the second to last does, the source_path directory gets renamed to the
         name of the last directory in target_path before it is moved. This is
-        the same behaviour as the bash mv command.
+        the same behavior as the bash mv command.
 
         Args:
             source_path (str | pathlib.Path): The path to the directory to move
@@ -790,12 +802,12 @@ class StupidlySimpleShell:
     ) -> Callable[[pathlib.Path], None]:
         """Register a callback that will be triggered whenever the data
         stored in path changes. The callback will receive the path to the
-        dataobject that has changed.
+        data object that has changed.
 
         Args:
-            path (TYPE): The path to the dataobject to monitor
-            callback (TYPE): The callback to invoke when the data in path has
-                changed.
+            path (pathlib.Path): The path to the data object to monitor
+            callback (Callable[[pathlib.Path], None]): The callback to invoke
+                when the data in path has changed.
         """
 
         node = self.filesystem.get_node(path)

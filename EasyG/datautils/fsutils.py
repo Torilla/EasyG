@@ -1,14 +1,14 @@
 from collections import namedtuple
 import pathlib
 
-from EasyG.datautils import filesystem
+from EasyG.datautils import sssh
 from EasyG.network import client as _client
 
 
-class TwoDimensionalPointArrayFile(filesystem.LeafNode):
+class TwoDimensionalPointArrayFile(sssh.LeafNode):
     PointArray = namedtuple("PointArray", ("x", "y"))
 
-    def __init__(self, name: str, parent: filesystem.Node | None = None):
+    def __init__(self, name: str, parent: sssh.Node | None = None):
         super().__init__(
             name=name,
             parent=parent,
@@ -29,7 +29,7 @@ class TwoDimensionalPointArrayFile(filesystem.LeafNode):
         self.execute_callbacks()
 
 
-class NoClientIDSetError(filesystem.FilesystemError):
+class NoClientIDSetError(sssh.FilesystemError):
 
     """Raised when trying to register a network client without clientID
     """
@@ -48,7 +48,7 @@ shell_extensions: list = []
 
 
 def shell_extension(func):
-    if hasattr(filesystem.StupidlySimpleShell, func.__name__):
+    if hasattr(sssh.StupidlySimpleShell, func.__name__):
         raise ValueError("Cannot override a function as shell extension!")
 
     elif any(f.__name__ == func.__name__ for f in shell_extensions):
@@ -61,31 +61,31 @@ def shell_extension(func):
 
 def load_shell_extensions():
     for func in shell_extensions:
-        if not hasattr(filesystem.StupidlySimpleShell, func.__name__):
-            setattr(filesystem.StupidlySimpleShell, func.__name__, func)
+        if not hasattr(sssh.StupidlySimpleShell, func.__name__):
+            setattr(sssh.StupidlySimpleShell, func.__name__, func)
 
 
 @shell_extension
-@filesystem.resolved_path(default_path=".")
+@sssh.resolved_path(default_path=".")
 def id(self, path: pathlib.Path) -> str:
     try:
-        node = self.filesystem.get_node(path)
-    except filesystem.NodeDoesNotExistError:
-        raise filesystem.InvalidPathError(path) from None
+        node = self.sssh.get_node(path)
+    except sssh.NodeDoesNotExistError:
+        raise sssh.InvalidPathError(path) from None
 
     return str(hash(node))
 
 
 @shell_extension
-@filesystem.resolved_path(default_path=".")
+@sssh.resolved_path(default_path=".")
 def set_client(self, path, client):
     try:
-        node = self.filesystem.get_node(path)
-    except filesystem.NodeDoesNotExistError:
-        raise filesystem.InvalidPathError(path) from None
+        node = self.sssh.get_node(path)
+    except sssh.NodeDoesNotExistError:
+        raise sssh.InvalidPathError(path) from None
 
     if not isinstance(node, NetworkClientFile):
-        raise filesystem.InvalidPathError(
+        raise sssh.InvalidPathError(
             f"Not a NetworkClientFile: {path}"
         ) from None
 

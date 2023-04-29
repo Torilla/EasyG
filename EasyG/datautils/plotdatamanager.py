@@ -3,11 +3,13 @@ import pathlib
 import pyqtgraph as pg
 
 from EasyG import defaults
-from EasyG.datautils import filesystem, fsutils
+from EasyG.datautils import sssh, fsutils
 from EasyG.gui import widgets
 
-fsutils.load_shell_extensions()
 Data_T = tuple[list[float], list[float]]
+
+# required for setting network clients
+fsutils.load_shell_extensions()
 
 
 class PlotDataManager:
@@ -15,11 +17,12 @@ class PlotDataManager:
         self, config: defaults.Config_T = defaults.Config.get("PlotDataManager")
     ):
         self._config = config
-        self.shell = filesystem.StupidlySimpleShell()
+        self.shell = sssh.StupidlySimpleShell()
         self._reset_shell()
 
     def _reset_shell(self, config: defaults.Config_T | None = None):
-        def reset_fs():
+        def reset_shell():
+            self.shell.cd("/")
             for path in self.shell.ls():
                 self.shell.rm(path, recursive=True)
 
@@ -31,11 +34,10 @@ class PlotDataManager:
                     name, children = node.get("name"), node.get("children", [])
 
                 self.shell.mkdir(name)
-                self.shell.cd(name)
-                make_fs(children)
-                self.shell.cd("..")
+                with self.shell.managed_cd(name):
+                    make_fs(children)
 
-        reset_fs()
+        reset_shell()
         make_fs(config or self._config.get("filesystem"))
 
     def _update_plotitems(self, path: pathlib.Path):

@@ -71,6 +71,9 @@ class IndividualTabWidget(QtWidgets.QWidget):
         self.splitter = widgets.GridSplitterWidget()
         layout.addWidget(self.splitter, 0, 0)
 
+        self.dataWidgetManager = widgets.DataWidgetManager()
+        layout.addWidget(self.dataWidgetManager, 1, 0)
+
     def insert_column(self, columnIdx):
         self.splitter.insertColumn(columnIdx)
 

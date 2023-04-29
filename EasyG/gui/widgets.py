@@ -596,3 +596,12 @@ class GridSplitterWidget(QtWidgets.QSplitter):
         """Slot called when a ExtendHorizontal Signal was emitted."""
         columnIdx, _ = self.indexOf(widget)
         self.ColumnInsertRequest.emit(columnIdx + 1)
+
+
+class DataWidgetManager(QtWidgets.QWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        layout = QtWidgets.QHBoxLayout()
+        self.setLayout(layout)
+
