@@ -3,5 +3,19 @@
 PlotDataManager:
   filesystem:
     - name: data
-    - name: plotitems
+      files:
+        default:
+          suffix: .dat
+          file_type: fsutils.TwoDimensionalPointArrayFile
+        network_clients:
+          suffix: .client
+          file_type: fsutils.NetworkClientFile
+      children:
+        - name: plotitems
+          files:
+            default:
+              suffix: .plotitem
     - name: plotwidgets
+      files:
+        default:
+          suffix: .plotwidget

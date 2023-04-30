@@ -7,7 +7,7 @@ functionality on top. See the respective class documentation for details.
 """
 from __future__ import annotations
 from typing import Any
-from collections.abc import Set, Iterator, Callable, Iterable
+from collections.abc import Set, Iterator, Callable, Iterable, Hashable
 
 from functools import wraps
 import pathlib
@@ -65,6 +65,8 @@ class AbstractNode:
         self.name = name
         self.set_parent(parent)
 
+        self._meta: dict[Hashable, Any] = {}
+
     @property
     def name(self) -> str:
         return self._name
@@ -99,6 +101,15 @@ class AbstractNode:
             parent.children.add(self)
 
         self._parent = parent
+
+    def get_metadata(self, key: Hashable) -> Any:
+        return self._meta[key]
+
+    def set_metadata(self, key: Hashable, value: Any) -> None:
+        self._meta[key] = value
+
+    def del_metadata(self, key: Hashable) -> Any:
+        return self._meta.pop(key)
 
     def get_path(self) -> pathlib.Path:
         """Return a pathlib.Path instance pointing from the root of the tree
@@ -544,7 +555,7 @@ def resolved_path(
             ) -> Any:
                 path = self.resolve_path(path)
 
-                return func(self, path, *args, **kwargs)
+                return func(self, *args, path=path, **kwargs)
 
         return wrapper
 
@@ -772,6 +783,18 @@ class StupidlySimpleShell:
         if not isinstance(node, LeafNode):
             raise InvalidPathError(f"Not a file: {path}")
         node.clear_data()
+
+    @resolved_path()
+    def get_metadata(self, path: pathlib.Path, key: Hashable) -> Any:
+        return self.filesystem.get_node(path).get_metadata(key)
+
+    @resolved_path()
+    def set_metadata(self, path: pathlib.Path, key: Hashable, value: Any) -> None:
+        self.filesystem.get_node(path).set_metadata(key, value)
+
+    @resolved_path()
+    def del_metadata(self, path: pathlib.Path, key: Hashable) -> Any:
+        return self.filesystem.get_node(path).del_metadata(key)
 
     @resolved_path()
     def rm(self, path: pathlib.Path, recursive: bool = False) -> Node | LeafNode:

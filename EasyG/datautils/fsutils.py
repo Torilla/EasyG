@@ -69,7 +69,7 @@ def load_shell_extensions():
 @sssh.resolved_path(default_path=".")
 def id(self, path: pathlib.Path) -> str:
     try:
-        node = self.sssh.get_node(path)
+        node = self.filesystem.get_node(path)
     except sssh.NodeDoesNotExistError:
         raise sssh.InvalidPathError(path) from None
 
@@ -77,10 +77,10 @@ def id(self, path: pathlib.Path) -> str:
 
 
 @shell_extension
-@sssh.resolved_path(default_path=".")
+@sssh.resolved_path()
 def set_client(self, path, client):
     try:
-        node = self.sssh.get_node(path)
+        node = self.filesystem.get_node(path)
     except sssh.NodeDoesNotExistError:
         raise sssh.InvalidPathError(path) from None
 

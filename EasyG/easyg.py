@@ -14,19 +14,22 @@ class EasyG(object):
 
         self.datamanager = plotdatamanager.PlotDataManager()
 
-        self.gui = guiwidgets.MainWindow()
-        self.gui.OpenExampleRequest.connect(self._onOpenExampleRequest)
+        self.mainWindow = guiwidgets.MainWindow()
+        self.mainWindow.OpenExampleRequest.connect(self._onOpenExampleRequest)
 
-        self._server_plugin = utils.ServerPlugin(self.gui, server)
+        self.tabManager = guiwidgets.TabManagerWidget()
+        self.mainWindow.setCentralWidget(self.tabManager)
+
+        self._server_plugin = utils.ServerPlugin(self.mainWindow, server)
         self._server_plugin.NewClientAvailable.connect(
             self._on_new_server_client)
 
     def _on_new_server_client(self, client):
         tabName = client.getClientID()
-        tab = self.gui.centralWidget().addTab(tabName)
+        tab = self.tabManager.addTab(tabName)
 
         data_id = self.datamanager.register_network_client(client=client)
-        plotitem = self.datamanager.get_managed_plotitem(data_id=data_id)
+        plotitem = self.datamanager.get_managed_plotitem(data_id=data_id, file_type="network_clients")
         plotwidget = self.datamanager.get_managed_plotwidget()
         plotwidget.addItem(plotitem)
         # create the first column of plots and insert the first plotter
@@ -47,7 +50,7 @@ class EasyG(object):
     def createNewTab(self, tabName, plotName, itemName, data):
         data_id = self.datamanager.register_data_source(data=data)
         plotitem = self.datamanager.get_managed_plotitem(data_id=data_id)
-        tab = self.gui.tabManager.addTab(tabName)
+        tab = self.tabManager.addTab(tabName)
         plotwidget = self.datamanager.get_managed_plotwidget()
         plotwidget.addItem(plotitem)
         # create the first column of plots and insert the first plotter
