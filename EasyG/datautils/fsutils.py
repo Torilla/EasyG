@@ -12,11 +12,13 @@ class TwoDimensionalPointArrayFile(sssh.LeafNode):
         super().__init__(
             name=name,
             parent=parent,
-            data=TwoDimensionalPointArrayFile.PointArray(x=[], y=[])
+            data=TwoDimensionalPointArrayFile.PointArray(x=[], y=[]),
         )
 
     def set_data(
-        self, data: tuple[list[float], list[float]] | list[float], action: str = "extend"
+        self,
+        data: tuple[list[float], list[float]] | list[float],
+        action: str = "extend",
     ):
         x, y = data
         getattr(self.data.x, action)(x)
@@ -31,8 +33,7 @@ class TwoDimensionalPointArrayFile(sssh.LeafNode):
 
 class NoClientIDSetError(sssh.FilesystemError):
 
-    """Raised when trying to register a network client without clientID
-    """
+    """Raised when trying to register a network client without clientID"""
 
 
 class NetworkClientFile(TwoDimensionalPointArrayFile):
@@ -85,8 +86,6 @@ def set_client(self, path, client):
         raise sssh.InvalidPathError(path) from None
 
     if not isinstance(node, NetworkClientFile):
-        raise sssh.InvalidPathError(
-            f"Not a NetworkClientFile: {path}"
-        ) from None
+        raise sssh.InvalidPathError(f"Not a NetworkClientFile: {path}") from None
 
     node.set_client(client)

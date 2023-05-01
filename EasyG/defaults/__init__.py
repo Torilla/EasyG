@@ -26,7 +26,7 @@ def parse_default_configurations():
                     errmsg = f"{file}\nExpected single key, found {list(cfg)}"
 
                 elif not isinstance(cfg, dict):
-                    errmsg = (f"{file}:\nExpected mapping, found {type(cfg)}")
+                    errmsg = f"{file}:\nExpected mapping, found {type(cfg)}"
 
                 if errmsg is not None:
                     raise InvalidConfigurationFile(errmsg)

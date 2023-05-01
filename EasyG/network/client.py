@@ -59,7 +59,8 @@ class EasyGClientDatabase(QtCore.QObject):
         self,
         dbName: str = _DEFAULT_DB_NAME,
         dbDriver: str = DEFAULT_DB_DRIVER,
-        *args, **kwargs
+        *args,
+        **kwargs,
     ):
         """Initialize a new EasyGClientDatabase instance.
 
@@ -134,7 +135,8 @@ class EasyGClientDatabase(QtCore.QObject):
                     passwordHash
                 )
                 VALUES (:clientID, :passwordHash);
-                """)
+                """
+            )
 
             query.bindValue(":clientID", clientID)
             query.bindValue(":passwordHash", passwordHash)
@@ -181,7 +183,8 @@ class EasyGClientDatabase(QtCore.QObject):
                 """
                     SELECT passwordHash FROM EasyGClients
                     WHERE clientID=:clientID;
-                """)
+                """
+            )
 
             query.bindValue(":clientID", clientID)
             query.exec()
@@ -205,8 +208,7 @@ class EasyGClientDatabase(QtCore.QObject):
         """
         try:
             pwHash = self._getClientPasswordHash(clientID)
-            result = checkPassword(password=clientPassword,
-                                   passwordHash=pwHash)
+            result = checkPassword(password=clientPassword, passwordHash=pwHash)
         except EasyGDatabaseError:
             result = False
 
@@ -239,8 +241,7 @@ class AuthenticationControlFlags(bytes, Enum):
 
         else:
             obj = super().__new__(cls, [value])
-            obj._value_ = value.to_bytes((value.bit_length() + 7) // 8,
-                                         byteorder="big")
+            obj._value_ = value.to_bytes((value.bit_length() + 7) // 8, byteorder="big")
 
         return obj
 
@@ -258,8 +259,7 @@ class AuthenticationControlFlags(bytes, Enum):
             bool: True if euqality with other holds, False otherwise
         """
         try:
-            other = other.to_bytes((other.bit_length() + 7) // 8,
-                                   byteorder="big")
+            other = other.to_bytes((other.bit_length() + 7) // 8, byteorder="big")
         except AttributeError:
             pass
 
@@ -322,6 +322,7 @@ class EasyGServerSideAuthentication(EasyGAbstractAuthenticationProtocol):
         Args:
             socket (QtNetwork.QTcpSocket): The socket to authenticate
         """
+
         @QtCore.pyqtSlot()
         def readAuth():
             socket.readyRead.disconnect(con)
@@ -335,7 +336,8 @@ class EasyGServerSideAuthentication(EasyGAbstractAuthenticationProtocol):
                 clientPW = None
 
             if clientPW is not None and self.CLIENTDB.checkClientPassword(
-                    clientID=clientID, clientPassword=clientPW):
+                clientID=clientID, clientPassword=clientPW
+            ):
                 socket.write(AuthenticationControlFlags.SUCCESS)
                 socket.write(AuthenticationControlFlags.EOM)
                 self.authSuccess.emit(clientID)
@@ -383,6 +385,7 @@ class EasyGClientSideAuthentication(EasyGAbstractAuthenticationProtocol):
             clientID (str): The client ID to use for authentication
             clientPassword (str): The password belonging to the client
         """
+
         @QtCore.pyqtSlot()
         def waitForReply():
             socket.readyRead.disconnect(con)
@@ -439,7 +442,8 @@ class EasyGTCPClient(EasyGAbstractClient):
         socket: QtNetwork.QTcpSocket,
         clientID=None,
         dataParser=EasyGAbstractClient.floatParser,
-        *args, **kwargs
+        *args,
+        **kwargs,
     ) -> None:
         """Initalize a new EasyGTCPClient
 
@@ -506,7 +510,7 @@ class EasyGTCPClient(EasyGAbstractClient):
 
         if idx > 0:
             data = self._dataBuffer[:idx]
-            self._dataBuffer = self._dataBuffer[idx + 1:]
+            self._dataBuffer = self._dataBuffer[idx + 1 :]
 
             for d in str(data, "utf-8").split("\n"):
                 d = self.dataParser(d)
@@ -532,15 +536,12 @@ class EasyGTCPClient(EasyGAbstractClient):
         return self.socket.state()
 
     def startParsing(self) -> None:
-        """Start parsing raw data and emitting the result as NewDataAvailable
-        """
+        """Start parsing raw data and emitting the result as NewDataAvailable"""
         if not self._readyReadConnection:
-            self._readyReadConnection = self.socket.readyRead.connect(
-                self._onReadyRead)
+            self._readyReadConnection = self.socket.readyRead.connect(self._onReadyRead)
 
     def stopParsing(self) -> None:
-        """Stop parsing raw data and emitting it.
-        """
+        """Stop parsing raw data and emitting it."""
         if self._readyReadConnection:
             self.socket.readyRead.disconnect(self._readyReadConnection)
 

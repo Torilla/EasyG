@@ -21,9 +21,7 @@ class SignalConnector:
         self._connections = {}
 
     def connect(
-        self,
-        source: QtCore.pyqtBoundSignal,
-        target: QtCore.pyqtBoundSignal | Callable
+        self, source: QtCore.pyqtBoundSignal, target: QtCore.pyqtBoundSignal | Callable
     ) -> None:
         """Connect source signal to target slot and store the resulting
         connection object for later disconnection.
@@ -72,7 +70,8 @@ class ServerPlugin(QtCore.QObject):
         self,
         gui: guiwidgets.MainWindow,
         server: _server.EasyGAuthenticationServer | None = None,
-        *args, **kwargs
+        *args,
+        **kwargs,
     ):
         """Initalize a new ServerPlugin instance
 
@@ -92,7 +91,8 @@ class ServerPlugin(QtCore.QObject):
 
         self._server_config_widget = widgets.ServerConfigurationWidget()
         self._server_config_widget.ConfigurationChanged.connect(
-            self._server_config_widget_changed)
+            self._server_config_widget_changed
+        )
 
         self.set_server(server)
 
@@ -148,14 +148,16 @@ class ServerPlugin(QtCore.QObject):
         """Fully connect the server to the GUI"""
         assert self._server is not None, "must set a server first!"
 
-        self._connector.connect(self._gui.startServerAction.triggered,
-                                self.start_server)
-        self._connector.connect(self._gui.stopServerAction.triggered,
-                                self.stop_server)
-        self._connector.connect(self._gui.configureServerAction.triggered,
-                                self._server_config_widget.show)
-        self._connector.connect(self._server.NewClientAvailable,
-                                self.NewClientAvailable)
+        self._connector.connect(
+            self._gui.startServerAction.triggered, self.start_server
+        )
+        self._connector.connect(self._gui.stopServerAction.triggered, self.stop_server)
+        self._connector.connect(
+            self._gui.configureServerAction.triggered, self._server_config_widget.show
+        )
+        self._connector.connect(
+            self._server.NewClientAvailable, self.NewClientAvailable
+        )
 
     def _server_config_widget_changed(self) -> None:
         """Initialize a new server instance with the current GUI server config

@@ -27,14 +27,14 @@ class ServerConfigurationWidget(QtWidgets.QGroupBox):
         self.maxpending_edit = QtWidgets.QLineEdit()
         self.maxpending_edit.setToolTip("Maximum no. of pending connections")
         self.maxpending_edit.setValidator(QtGui.QIntValidator(1, 1000))
-        layout.addRow("Maximum pending:",
-                      self.maxpending_edit)
+        layout.addRow("Maximum pending:", self.maxpending_edit)
 
         self.buttons = QtWidgets.QDialogButtonBox(self)
         self.buttons.setGeometry(QtCore.QRect(50, 240, 341, 32))
         self.buttons.setOrientation(QtCore.Qt.Horizontal)
         self.buttons.setStandardButtons(
-            QtWidgets.QDialogButtonBox.Cancel | QtWidgets.QDialogButtonBox.Ok)
+            QtWidgets.QDialogButtonBox.Cancel | QtWidgets.QDialogButtonBox.Ok
+        )
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
@@ -43,7 +43,7 @@ class ServerConfigurationWidget(QtWidgets.QGroupBox):
         return {
             "HostAddress": self.ip_edit.text(),
             "HostPort": int(self.port_edit.text()),
-            "maxPendingConnections": int(self.maxpending_edit.text())
+            "maxPendingConnections": int(self.maxpending_edit.text()),
         }
 
     def set_configuration(self, config):
@@ -57,6 +57,11 @@ class ServerConfigurationWidget(QtWidgets.QGroupBox):
 
     def reject(self):
         self.hide()
+
+
+class EasyGPlotDataItem(pg.PlotDataItem):
+    def set_title(self, title):
+        self.opts["name"] = title
 
 
 class EasyGPlotWidget(pg.PlotWidget):
@@ -82,11 +87,13 @@ class EasyGPlotWidget(pg.PlotWidget):
     # x0, x1 coordinates of self._ROI
     NewROICoordinates = QtCore.pyqtSignal(float, float)
 
-    def __init__(self,
-                 parent: QtCore.QObject | None = None,
-                 background: str = 'default',
-                 plotItem: pg.PlotItem | None = None,
-                 **kargs):
+    def __init__(
+        self,
+        parent: QtCore.QObject | None = None,
+        background: str = "default",
+        plotItem: pg.PlotItem | None = None,
+        **kargs,
+    ):
         """Initalize a new EasyGPlotWidget isntance. The method is directly
         taken from the original pyqtgraph.PlotWidget source as we need to
         modify its behavior without resorting to super().__init__ (see below)
@@ -101,8 +108,10 @@ class EasyGPlotWidget(pg.PlotWidget):
         # https://pyqtgraph.readthedocs.io/en/latest/_modules/pyqtgraph/widgets/PlotWidget.html
         # ----------------------------------------------------------------------
         pg.GraphicsView.__init__(self, parent, background=background)
-        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,
-                           QtWidgets.QSizePolicy.Policy.Expanding)
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Expanding,
+        )
         self.enableMouse(False)
         if plotItem is None:
             self.plotItem = pg.PlotItem(**kargs)
@@ -110,11 +119,26 @@ class EasyGPlotWidget(pg.PlotWidget):
             self.plotItem = plotItem
         self.setCentralItem(self.plotItem)
         # Explicitly wrap methods from plotItem
-        for m in ['addItem', 'removeItem', 'autoRange', 'clear',
-                  'setAxisItems', 'setXRange', 'setYRange', 'setRange',
-                  'setAspectLocked', 'setMouseEnabled', 'setXLink', 'setYLink',
-                  'enableAutoRange', 'disableAutoRange', 'setLimits',
-                  'register', 'unregister', 'viewRect']:
+        for m in [
+            "addItem",
+            "removeItem",
+            "autoRange",
+            "clear",
+            "setAxisItems",
+            "setXRange",
+            "setYRange",
+            "setRange",
+            "setAspectLocked",
+            "setMouseEnabled",
+            "setXLink",
+            "setYLink",
+            "enableAutoRange",
+            "disableAutoRange",
+            "setLimits",
+            "register",
+            "unregister",
+            "viewRect",
+        ]:
             setattr(self, m, getattr(self.plotItem, m))
         self.plotItem.sigRangeChanged.connect(self.viewRangeChanged)
         # -----------------------END OF ORIGINAL INIT---------------------------
@@ -122,19 +146,23 @@ class EasyGPlotWidget(pg.PlotWidget):
         self.addLegend()
 
         # region of interest, activated by double clicking
-        self._ROI = pg.RectROI(pos=(0, 0), size=(0, 0),
-                               pen=pg.mkPen("g", width=1.5, style=Qt.DashLine),
-                               invertible=True)
-        self._ROI.sigRegionChangeFinished.connect(self.emitROICoordinates)
+        self._ROI = pg.RectROI(
+            pos=(0, 0),
+            size=(0, 0),
+            pen=pg.mkPen("g", width=1.5, style=Qt.DashLine),
+            invertible=True,
+        )
+        self._ROI.sigRegionChangeFinished.connect(self.emit_ROI_coordinates)
         self._ROI.hide()
         self.addItem(self._ROI)
 
         # connection of the setROISize slot upon double click
-        self._setROISizeConnection = None
+        self._set_ROI_sizeConnection = None
 
         self.titleLabelContextMenu = QtWidgets.QMenu(self)
         self.titleLabelEditTextAction = self.titleLabelContextMenu.addAction(
-            "Edit Title")
+            "Edit Title"
+        )
 
         # inject a contextMenuEventHandler into the titleLabel so we can catch
         # right click events
@@ -147,10 +175,10 @@ class EasyGPlotWidget(pg.PlotWidget):
         if action == self.titleLabelEditTextAction:
             self.TitleChangeRequest.emit(self)
 
-    def getTitle(self) -> str:
+    def get_title(self) -> str:
         return self.plotItem.titleLabel.text
 
-    def setTitle(self, title: str) -> None:
+    def set_title(self, title: str) -> None:
         self.plotItem.setTitle(title)
 
     def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:
@@ -160,20 +188,21 @@ class EasyGPlotWidget(pg.PlotWidget):
 
         pos = self.getViewBox().mapSceneToView(event.pos())
         self._ROI.setPos(pos)
-        self._setROISizeConnection = self.scene().sigMouseMoved.connect(
-            self._setROISize)
+        self._set_ROI_sizeConnection = self.scene().sigMouseMoved.connect(
+            self._set_ROI_size
+        )
         self._ROI.show()
 
     @QtCore.pyqtSlot(object)
-    def _setROISize(self, pos: QtCore.QPointF) -> None:
+    def _set_ROI_size(self, pos: QtCore.QPointF) -> None:
         pos = self.getViewBox().mapSceneToView(pos)
         self._ROI.setSize(pos - self._ROI.pos())
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
-        if self._setROISizeConnection is not None:
+        if self._set_ROI_sizeConnection is not None:
             event.accept()
-            self.scene().sigMouseMoved.disconnect(self._setROISizeConnection)
-            self._setROISizeConnection = None
+            self.scene().sigMouseMoved.disconnect(self._set_ROI_sizeConnection)
+            self._set_ROI_sizeConnection = None
 
         else:
             super().mouseReleaseEvent(event)
@@ -186,7 +215,7 @@ class EasyGPlotWidget(pg.PlotWidget):
         else:
             super().mousePressEvent(event)
 
-    def emitROICoordinates(self) -> None:
+    def emit_ROI_coordinates(self) -> None:
         x0 = self._ROI.pos().x()
         x1 = x0 + self._ROI.size().x()
 
@@ -316,14 +345,13 @@ class SplitterProxyWidget(ProxyWidget):
         the top right of the proxied widget. The ExtendVerticalButton is
         hidden by default.
         """
+
         def quit():
             self.quitButton = QtWidgets.QToolButton()
             self.quitButton.setToolTip("Remove this plot.")
-            self.quitButton.setToolButtonStyle(
-                Qt.ToolButtonStyle.ToolButtonIconOnly)
+            self.quitButton.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
 
-            icon = self.style().standardIcon(
-                QtWidgets.QStyle.SP_TitleBarCloseButton)
+            icon = self.style().standardIcon(QtWidgets.QStyle.SP_TitleBarCloseButton)
             self.quitButton.setIcon(icon)
             self.quitButton.clicked.connect(self.__on_quit_request)
 
@@ -331,16 +359,16 @@ class SplitterProxyWidget(ProxyWidget):
 
         def extend_vertical():
             self.extendVerticalButton = QtWidgets.QToolButton()
-            self.extendVerticalButton.setToolTip(
-                "Add a new plot below this plot.")
+            self.extendVerticalButton.setToolTip("Add a new plot below this plot.")
             self.extendVerticalButton.setToolButtonStyle(
-                Qt.ToolButtonStyle.ToolButtonIconOnly)
+                Qt.ToolButtonStyle.ToolButtonIconOnly
+            )
 
             icon = self.style().standardIcon(
-                QtWidgets.QStyle.SP_ToolBarVerticalExtensionButton)
+                QtWidgets.QStyle.SP_ToolBarVerticalExtensionButton
+            )
             self.extendVerticalButton.setIcon(icon)
-            self.extendVerticalButton.clicked.connect(
-                self.__on_extend_vertical_request)
+            self.extendVerticalButton.clicked.connect(self.__on_extend_vertical_request)
 
             self.buttonLayout.addWidget(self.extendVerticalButton)
 
@@ -349,21 +377,24 @@ class SplitterProxyWidget(ProxyWidget):
                 # only add it once
                 self.extendHorizontalButton = QtWidgets.QToolButton()
                 self.extendHorizontalButton.setToolTip(
-                    "Add a new plot to the right of this plot.")
+                    "Add a new plot to the right of this plot."
+                )
                 self.extendHorizontalButton.setToolButtonStyle(
-                    Qt.ToolButtonStyle.ToolButtonIconOnly)
+                    Qt.ToolButtonStyle.ToolButtonIconOnly
+                )
 
                 icon = self.style().standardIcon(
-                    QtWidgets.QStyle.SP_ToolBarHorizontalExtensionButton)
+                    QtWidgets.QStyle.SP_ToolBarHorizontalExtensionButton
+                )
                 self.extendHorizontalButton.setIcon(icon)
                 self.extendHorizontalButton.clicked.connect(
-                    self.__on_extend_horizontal_request)
+                    self.__on_extend_horizontal_request
+                )
 
                 self.buttonLayout.addWidget(self.extendHorizontalButton)
 
         self.buttonLayout = QtWidgets.QHBoxLayout()
-        self.layout().addLayout(self.buttonLayout, 0, 0,
-                                Qt.AlignTop | Qt.AlignRight)
+        self.layout().addLayout(self.buttonLayout, 0, 0, Qt.AlignTop | Qt.AlignRight)
         extend_vertical()
         extend_horizontal()
         quit()
@@ -416,6 +447,7 @@ class GridSplitterWidget(QtWidgets.QSplitter):
 
     # columnIdx
     ColumnInsertRequest = QtCore.pyqtSignal(int)
+    ColumnRemoveRequest = QtCore.pyqtSignal(int)
     # columnIdx, rowIdx
     WidgetInsertRequest = QtCore.pyqtSignal(int, int)
     WidgetRemoveRequest = QtCore.pyqtSignal(int, int)
@@ -429,20 +461,22 @@ class GridSplitterWidget(QtWidgets.QSplitter):
         """
         super().__init__(orientation=Qt.Horizontal, *args, **kwargs)
 
-    def _initNewProxyWidget(self, widget):
+    def _init_proxy_widget(self, widget):
         proxyWidget = self.proxyWidgetType(widget=widget)
         proxyWidget.ExtendVerticalButtonClicked.connect(
-            self.onSublevelExtendVertical)
-        proxyWidget.QuitButtonClicked.connect(self.onSublevelQuit)
+            self._on_sublevel_extend_vertical
+        )
+        proxyWidget.QuitButtonClicked.connect(self._on_sublevel_quit)
         proxyWidget.ExtendHorizontalButtonClicked.connect(
-            self.onSublevelExtendHorizontal)
+            self._on_sublevel_extend_horizontal
+        )
 
         return proxyWidget
 
     def setOrientation(self, *args, **kwargs):
         raise NotImplementedError("Can't set orientation of ToplevelSplitter")
 
-    def columnCount(self) -> int:
+    def column_count(self) -> int:
         """Return the current number of clumns in the grid.
 
         Returns:
@@ -450,7 +484,7 @@ class GridSplitterWidget(QtWidgets.QSplitter):
         """
         return self.count()
 
-    def rowCountOfColumn(self, columnIdx: int) -> int:
+    def row_count_of_column(self, columnIdx: int) -> int:
         """Return the current row count in column with index columnIdx
 
         Args:
@@ -461,9 +495,7 @@ class GridSplitterWidget(QtWidgets.QSplitter):
         """
         return self.widget(columnIdx).count()
 
-    def widget(
-        self, columnIdx: int, rowIdx: int | None = None
-    ) -> QtWidgets.QWidget:
+    def widget(self, columnIdx: int, rowIdx: int | None = None) -> QtWidgets.QWidget:
         """Return the widget which is stored at coordinates columnIdx, rowIdx.
         If rowIdx is None, the entire column is returned.
 
@@ -474,31 +506,43 @@ class GridSplitterWidget(QtWidgets.QSplitter):
         colWidget = super().widget(columnIdx)
 
         if colWidget is None:
-            raise IndexError(f"Column Index {columnIdx} out of bound: "
-                             f"len({self.count()})")
+            raise IndexError(
+                f"Column Index {columnIdx} out of bound: " f"len({self.count()})"
+            )
 
         if rowIdx is not None:
             widget = colWidget.widget(rowIdx)
 
             if widget is None:
-                raise IndexError(f"Row Index {rowIdx} out of bound: "
-                                 f"len({colWidget.count()})")
+                raise IndexError(
+                    f"Row Index {rowIdx} out of bound: " f"len({colWidget.count()})"
+                )
 
         else:
             widget = colWidget
 
         return widget
 
-    def insertColumn(self, columnIdx: int) -> None:
+    def insert_column(self, columnIdx: int) -> None:
         """Insert a new Column into the grid. The column will be empty by
-        default. Use insertWidget to add widget to the column
+        default. Use insert_widget to add widget to the column
 
         Args:
             columnIdx (int): Where to insert the column
         """
         super().insertWidget(columnIdx, SublevelSplitter())
 
-    def insertWidget(
+    def remove_column(self, columnIdx: int) -> SublevelSplitter:
+        col = self.widget(columnIdx)
+        col.hide()
+        col.setParent(None)
+
+        return col
+
+    def insertWidget(self):
+        raise NotImplementedError("Use insert_widget instead of insertWidget.")
+
+    def insert_widget(
         self, columnIdx: int, rowIdx: int, widget: QtWidgets.QWidget
     ) -> None:
         """Insert a new Widget into the Grid.
@@ -508,9 +552,9 @@ class GridSplitterWidget(QtWidgets.QSplitter):
             rowIdx (int): The row Index where to insert
             widget (QtWidgets.QWidget): The widget to insert
         """
-        widget = self._initNewProxyWidget(widget)
+        widget = self._init_proxy_widget(widget)
 
-        if rowIdx == 0 or not self.rowCountOfColumn(columnIdx):
+        if rowIdx == 0 or not self.row_count_of_column(columnIdx):
             # first widget in the row gets extend horizontal button
             widget.extendHorizontalButton.show()
 
@@ -522,7 +566,7 @@ class GridSplitterWidget(QtWidgets.QSplitter):
 
         self.widget(columnIdx).insertWidget(rowIdx, widget)
 
-    def removeWidget(self, columnIdx: int, rowIdx: int) -> None:
+    def remove_widget(self, columnIdx: int, rowIdx: int) -> None:
         """Remove a widget from the Grid. The widget will be scheduled for
         deletion.
 
@@ -530,15 +574,19 @@ class GridSplitterWidget(QtWidgets.QSplitter):
             columnIdx (int): The column Index to query
             rowIdx (int): The row Index to query
         """
-        if rowIdx == 0 and self.rowCountOfColumn(columnIdx) > 1:
+        if rowIdx == 0 and self.row_count_of_column(columnIdx) > 1:
             self.widget(columnIdx, 1).extendHorizontalButton.show()
 
         widget = self.widget(columnIdx, rowIdx)
         widget.hide()
-        widget.deleteLater()
         widget.setParent(None)
 
-    def indexOf(self, widget: QtWidgets.QWidget) -> tuple[int, int]:
+        if not self.row_count_of_column(columnIdx):
+            self.ColumnRemoveRequest.emit(columnIdx)
+
+        return widget.widget()  # return the proxied widget
+
+    def index_of(self, widget: QtWidgets.QWidget) -> tuple[int, int]:
         """Retun the column and row Indices of the stored widget.
 
         Args:
@@ -576,25 +624,25 @@ class GridSplitterWidget(QtWidgets.QSplitter):
         return columnIdx, rowIdx
 
     @QtCore.pyqtSlot(bool, object)
-    def onSublevelQuit(self, checked: bool, widget: QtWidgets.QWidget) -> None:
+    def _on_sublevel_quit(self, checked: bool, widget: QtWidgets.QWidget) -> None:
         """Slot called when a QuitButton Signal was emitted."""
-        columnIdx, rowIdx = self.indexOf(widget)
+        columnIdx, rowIdx = self.index_of(widget)
         self.WidgetRemoveRequest.emit(columnIdx, rowIdx)
 
     @QtCore.pyqtSlot(bool, object)
-    def onSublevelExtendVertical(
+    def _on_sublevel_extend_vertical(
         self, checked: bool, widget: QtWidgets.QWidget
     ) -> None:
         """Slot called when a ExtendVertical Signal was emitted."""
-        columnIdx, rowIdx = self.indexOf(widget)
+        columnIdx, rowIdx = self.index_of(widget)
         self.WidgetInsertRequest.emit(columnIdx, rowIdx + 1)
 
     @QtCore.pyqtSlot(bool, object)
-    def onSublevelExtendHorizontal(
+    def _on_sublevel_extend_horizontal(
         self, checked: bool, widget: QtWidgets.QWidget
     ) -> None:
         """Slot called when a ExtendHorizontal Signal was emitted."""
-        columnIdx, _ = self.indexOf(widget)
+        columnIdx, _ = self.index_of(widget)
         self.ColumnInsertRequest.emit(columnIdx + 1)
 
 
@@ -604,4 +652,3 @@ class DataWidgetManager(QtWidgets.QWidget):
 
         layout = QtWidgets.QHBoxLayout()
         self.setLayout(layout)
-

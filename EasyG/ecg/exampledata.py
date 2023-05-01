@@ -53,8 +53,12 @@ def openExample():
     methods, files = Examples["methods"], Examples["files"]
 
     exampleName, valid = QInputDialog.getItem(
-        None, "Select Example Type", "List of Example Types",
-        list(methods) + [f.name for f in files], 0, False
+        None,
+        "Select Example Type",
+        "List of Example Types",
+        list(methods) + [f.name for f in files],
+        0,
+        False,
     )
 
     if valid:

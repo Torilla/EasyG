@@ -1,7 +1,5 @@
 import pathlib
 
-import pyqtgraph as pg
-
 from EasyG import defaults
 from EasyG.datautils import sssh, fsutils
 from EasyG.gui import widgets
@@ -28,11 +26,12 @@ class PlotDataManager:
 
         def make_fs(nodes):
             def import_metadata():
-                for cfg in node.get("files", {}).values():
+                for cfg in files_meta.values():
                     mod, cls = cfg.get("file_type", "sssh.LeafNode").split(".")
                     cfg["file_type"] = getattr(globals()[mod], cls)
 
             for node in nodes:
+                files_meta = node["files"] = node.get("files", {})
                 import_metadata()
 
                 if isinstance(node, str):
@@ -42,22 +41,25 @@ class PlotDataManager:
 
                 self.shell.mkdir(name)
                 with self.shell.managed_cd(name):
-                    self.shell.set_metadata(".", "files", node["files"])
+                    self.shell.set_metadata(".", "files", files_meta)
                     make_fs(children)
 
         reset_shell()
         make_fs(self._config.get("filesystem"))
 
     def _update_plotitems(self, path: pathlib.Path):
-        id_ = path.stem
         data = self.shell.get_data(path)
-        for item in self.shell.ls(f"data/plotitems/{id_}/"):
-            self.shell.get_data(f"data/plotitems/{id_}/{item}").setData(*data)
+
+        # path.stem == data_id
+        with self.shell.managed_cd(f"data/plotitems/{path.stem}"):
+            for itemfile in self.shell.ls():
+                item = self.shell.get_data(itemfile)
+                item.setData(*data)
 
     def register_data_source(
         self, data: Data_T, file_type=fsutils.TwoDimensionalPointArrayFile
     ):
-        id_ = str(id(data))
+        id_ = id(data)
         meta = self.shell.get_metadata("data", "files")["default"]
         path = f"data/{id_}{meta['suffix']}"
         self.shell.touch(path, file_type=meta["file_type"])
@@ -75,7 +77,7 @@ class PlotDataManager:
         return self.shell.rm(f"data/{data_id}{meta['suffix']}").data
 
     def register_network_client(self, client):
-        id_ = str(id(client))
+        id_ = id(client)
         meta = self.shell.get_metadata("data", "files")["network_clients"]
         path = f"data/{id_}{meta['suffix']}"
         self.shell.touch(path, file_type=meta["file_type"])
@@ -85,20 +87,23 @@ class PlotDataManager:
 
         return id_
 
-    def get_managed_plotitem(self, data_id, item_type=pg.PlotDataItem, file_type="default"):
+    def get_managed_plotitem(
+        self, data_id, item_type=widgets.EasyGPlotDataItem, file_type="default"
+    ):
         meta = self.shell.get_metadata("data", "files")[file_type]
         path = f"data/{data_id}{meta['suffix']}"
         data = self.shell.get_data(path)
         plotitem = item_type(*data)
 
         meta = self.shell.get_metadata("data/plotitems", "files")["default"]
-        path = f"data/plotitems/{data_id}/{id(plotitem)}{meta['suffix']}"
+        id_ = id(plotitem)
+        path = f"data/plotitems/{data_id}/{id_}{meta['suffix']}"
         self.shell.touch(path)
         self.shell.set_data(path, plotitem)
 
-        return plotitem
+        return plotitem, id_
 
-    def remove_managed_plotitem(self, item_id, data_id):
+    def remove_managed_plotitem(self, data_id, item_id):
         meta = self.shell.get_metadata("data/plotitems", "files")["default"]
 
         return self.shell.rm(f"data/plotitems/{data_id}/{item_id}{meta['suffix']}").data
@@ -106,11 +111,12 @@ class PlotDataManager:
     def get_managed_plotwidget(self):
         widget = widgets.EasyGPlotWidget()
         meta = self.shell.get_metadata("plotwidgets", "files")["default"]
-        path = f"plotwidgets/{id(widget)}{meta['suffix']}"
-        self.shell.touch(path, file_type=meta['file_type'])
+        id_ = id(widget)
+        path = f"plotwidgets/{id_}{meta['suffix']}"
+        self.shell.touch(path, file_type=meta["file_type"])
         self.shell.set_data(path, widget)
 
-        return widget
+        return widget, id_
 
     def remove_managed_plotwidget(self, widget_id):
         meta = self.shell.get_metadata("plotwidgets", "files")["default"]

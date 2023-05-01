@@ -61,9 +61,9 @@ class EasyGAuthenticationServer(QtCore.QObject):
         host_port: int,
         server: QtNetwork.QTcpServer = QtNetwork.QTcpServer(),
         client_type: type[client.EasyGTCPClient] = client.EasyGTCPClient,
-        authentication_protocol: client.EasyGServerSideAuthentication =
-        client.EasyGServerSideAuthentication(),
-        *args, **kwargs
+        authentication_protocol: client.EasyGServerSideAuthentication = client.EasyGServerSideAuthentication(),
+        *args,
+        **kwargs,
     ):
         """Initialize a new EasyGAuthenticationServer instance
 
@@ -109,6 +109,7 @@ class EasyGAuthenticationServer(QtCore.QObject):
         It carries out the authentication of the client and either emits it
         using the NewClientAvailable signal or the AuthenticationFailed signal.
         """
+
         def _disconnectSignals() -> None:
             self.authentication_protocol.authSuccess.disconnect(conS)
             self.authentication_protocol.authFailed.disconnect(conF)
@@ -116,8 +117,7 @@ class EasyGAuthenticationServer(QtCore.QObject):
         @QtCore.pyqtSlot(str)
         def emit_client(clientID: str) -> None:
             _disconnectSignals()
-            client = self.client_type(socket=socket, clientID=clientID,
-                                      parent=self)
+            client = self.client_type(socket=socket, clientID=clientID, parent=self)
             self.NewClientAvailable.emit(client)
 
         @QtCore.pyqtSlot(int)
@@ -129,9 +129,11 @@ class EasyGAuthenticationServer(QtCore.QObject):
         socket = self.server.nextPendingConnection()
 
         conS = self.authentication_protocol.authSuccess.connect(
-            emit_client)  # type: ignore[arg-type]
+            emit_client
+        )  # type: ignore[arg-type]
         conF = self.authentication_protocol.authFailed.connect(
-            fail_client)  # type: ignore[arg-type]
+            fail_client
+        )  # type: ignore[arg-type]
 
         self.authentication_protocol.authenticate(socket=socket)
 
@@ -145,7 +147,8 @@ class EasyGAuthenticationServer(QtCore.QObject):
         """
         if self._server_connection is None:
             self._server_connection = self.server.newConnection.connect(
-                self.on_new_connection)
+                self.on_new_connection
+            )
 
             if not self.server.listen(self.host_address, self.host_port):
                 self.server.newConnection.disconnect(self._server_connection)
@@ -215,5 +218,5 @@ class EasyGAuthenticationServer(QtCore.QObject):
         return ServerConfiguration(
             HostAddress=self.host_address.toString(),
             HostPort=self.host_port,
-            maxPendingConnections=self.server.maxPendingConnections()
+            maxPendingConnections=self.server.maxPendingConnections(),
         )
